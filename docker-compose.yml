@@ -1,0 +1,36 @@
+services:
+  hermes:
+    build: .
+    container_name: hermes-homelab
+    restart: unless-stopped
+    ports:
+      - "7681:7681"                # Web terminal — point NPM here
+    volumes:
+      - hermes-workspace:/workspace
+      - hermes-config:/home/hermes/.hermes
+      - hermes-home:/home/hermes
+    environment:
+      - TTYD_USER=${TTYD_USER:-hermes}
+      - TTYD_PASSWORD=${TTYD_PASSWORD:-changeme}
+    cap_drop:
+      - ALL
+    cap_add:
+      - NET_ADMIN                  # Required for iptables LAN-blocking rules
+    read_only: true
+    tmpfs:
+      - /tmp:size=256m
+      - /run:size=64m
+    dns:
+      - 1.1.1.1
+      - 8.8.8.8
+    networks:
+      hermes-net:
+
+volumes:
+  hermes-workspace:                # /workspace — AI creates files here
+  hermes-config:                   # ~/.hermes — chats, memory, skills
+  hermes-home:                     # /home/hermes — git config, gh auth, etc.
+
+networks:
+  hermes-net:
+    driver: bridge
