@@ -3,7 +3,7 @@ FROM python:3.12-slim
 ARG NODE_MAJOR=20
 ARG TTYD_VERSION=1.7.7
 
-# System deps — minimal attack surface
+# System deps
 RUN apt-get update && apt-get install -y --no-install-recommends \
     curl wget gnupg ca-certificates apt-transport-https \
     git openssh-client iptables iproute2 \
@@ -11,7 +11,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     && apt-get install -y --no-install-recommends nodejs \
     && apt-get clean && rm -rf /var/lib/apt/lists/*
 
-# ttyd — web-based terminal
+# ttyd
 RUN wget -qO /usr/local/bin/ttyd \
     "https://github.com/tsl0922/ttyd/releases/download/${TTYD_VERSION}/ttyd.x86_64" \
     && chmod +x /usr/local/bin/ttyd
@@ -29,14 +29,14 @@ RUN curl -fsSL https://cli.github.com/packages/githubcli-archive-keyring.gpg \
 
 # ── Security hardening ──────────────────────────────────────────────
 
-# Remove setuid/setgid binaries (defense-in-depth)
 RUN find / -perm /6000 -type f -exec chmod a-s {} + 2>/dev/null || true
 
-# Non-root user
+# Non-root user — create ALL dirs the volumes will mount at, with correct ownership
 RUN useradd -m -s /bin/bash hermes \
-    && mkdir -p /workspace && chown hermes:hermes /workspace
+    && mkdir -p /workspace && chown hermes:hermes /workspace \
+    && mkdir -p /home/hermes/.hermes && chown -R hermes:hermes /home/hermes/.hermes
 
-# gosu — lightweight privilege drop
+# gosu
 RUN ARCH=$(dpkg --print-architecture) && \
     wget -qO /usr/local/bin/gosu "https://github.com/tianon/gosu/releases/download/1.17/gosu-${ARCH}" \
     && chmod +x /usr/local/bin/gosu
@@ -48,7 +48,6 @@ RUN chmod +x /entrypoint.sh /gh-mcp-init.sh
 WORKDIR /workspace
 EXPOSE 7681
 
-# Health check — verifies ttyd is responding on port 7681
 HEALTHCHECK --interval=30s --timeout=5s --start-period=10s --retries=3 \
     CMD wget -qO /dev/null http://localhost:7681 || exit 1
 

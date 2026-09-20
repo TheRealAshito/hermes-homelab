@@ -16,8 +16,11 @@ services:
       - ALL
     cap_add:
       - NET_ADMIN
+      - SETUID
+      - SETGID
+      - DAC_OVERRIDE                 # Root needs this to traverse hermes-owned dirs
     security_opt:
-      - no-new-privileges:true          # Prevent setuid escalation
+      - no-new-privileges:true
     read_only: true
     tmpfs:
       - /tmp:size=256m
@@ -26,7 +29,7 @@ services:
       - 1.1.1.1
       - 8.8.8.8
     ulimits:
-      nproc: 512                        # Fork bomb protection
+      nproc: 512
       nofile:
         soft: 65536
         hard: 65536
@@ -36,8 +39,6 @@ services:
 networks:
   hermes-net:
     driver: bridge
-    # No --network host, no external networks
-    # Traffic goes through Docker's NAT → iptables inside container blocks LAN
 
 volumes:
   hermes-workspace:
