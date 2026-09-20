@@ -1,4 +1,4 @@
-.PHONY: build up down restart logs test-security test-persistence test clean
+.PHONY: build up down restart logs test-security test-persistence test clean backup restore status update
 
 build:
 	docker compose build
@@ -41,3 +41,9 @@ status:
 	@echo ""
 	@echo "RAM usage:"
 	@docker stats hermes-homelab --no-stream --format "  {{.MemUsage}}"
+
+backup:
+	@bash backup.sh
+
+restore:
+	@echo "Usage: bash restore.sh ./backups/hermes-backup-YYYYMMDD-HHMMSS.tar.gz"

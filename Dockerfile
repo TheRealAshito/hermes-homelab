@@ -36,25 +36,21 @@ RUN find / -perm /6000 -type f -exec chmod a-s {} + 2>/dev/null || true
 RUN useradd -m -s /bin/bash hermes \
     && mkdir -p /workspace && chown hermes:hermes /workspace
 
-# Helpful .bashrc
-RUN echo 'echo ""' >> /home/hermes/.bashrc \
-    && echo 'echo "  Welcome to Hermes Homelab"' >> /home/hermes/.bashrc \
-    && echo 'echo "  Workspace: /workspace"' >> /home/hermes/.bashrc \
-    && echo 'echo "  Run \"hermes setup\" to configure your AI provider"' >> /home/hermes/.bashrc \
-    && echo 'echo "  Run \"hermes chat\" to start chatting"' >> /home/hermes/.bashrc \
-    && echo 'echo ""' >> /home/hermes/.bashrc \
-    && chown hermes:hermes /home/hermes/.bashrc
-
 # gosu — lightweight privilege drop
 RUN ARCH=$(dpkg --print-architecture) && \
     wget -qO /usr/local/bin/gosu "https://github.com/tianon/gosu/releases/download/1.17/gosu-${ARCH}" \
     && chmod +x /usr/local/bin/gosu
 
 COPY entrypoint.sh /entrypoint.sh
-RUN chmod +x /entrypoint.sh
+COPY gh-mcp-init.sh /gh-mcp-init.sh
+RUN chmod +x /entrypoint.sh /gh-mcp-init.sh
 
 WORKDIR /workspace
 EXPOSE 7681
+
+# Health check — verifies ttyd is responding on port 7681
+HEALTHCHECK --interval=30s --timeout=5s --start-period=10s --retries=3 \
+    CMD wget -qO /dev/null http://localhost:7681 || exit 1
 
 ENTRYPOINT ["/entrypoint.sh"]
 CMD ["ttyd", "--writable", "-t", "fontSize=14", "-t", "theme={\"background\":\"#1e1e2e\",\"foreground\":\"#cdd6f4\"}", "bash"]

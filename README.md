@@ -10,6 +10,8 @@ Run [Hermes Agent](https://github.com/nousresearch/hermes-agent) as a sandboxed 
 - **Network isolation**: blocks all LAN access (192.168.x, 10.x, 172.16-31.x), internet-only for cloud API calls
 - Persistent storage for chats, memory, skills, and workspace files
 - Supports any OpenAI-compatible API (MiMo, DeepSeek, Claude, OpenAI, etc.)
+- GitHub MCP auto-config when `gh auth login` is done inside the container
+- Backup/restore for all persistent data
 
 ## Requirements
 
@@ -32,7 +34,7 @@ make build
 make up
 
 # 4. Open in browser
-# http://<your-homelip>:7681
+# http://<your-homelab-ip>:7681
 ```
 
 On first connect you'll land in a bash shell. Run:
@@ -72,6 +74,20 @@ hermes config set provider.openai.model gpt-4o
 hermes status
 ```
 
+## GitHub MCP Integration
+
+The container auto-configures the GitHub MCP server when you authenticate with `gh`:
+
+```bash
+# Inside the web terminal:
+gh auth login          # follow the prompts
+# GitHub MCP is automatically configured on next container restart
+# Or trigger it manually:
+/gh-mcp-init.sh
+```
+
+This gives Hermes access to GitHub repos, issues, PRs, etc. via MCP tools.
+
 ## Security
 
 See [SECURITY-AUDIT.md](SECURITY-AUDIT.md) for the full threat model.
@@ -92,6 +108,7 @@ See [SECURITY-AUDIT.md](SECURITY-AUDIT.md) for the full threat model.
 | No Docker socket | Docker socket is NOT mounted — no container escape |
 | Resource limits | nproc=512 (fork bomb protection), nofile=65536 |
 | TTYD basic auth | Web terminal requires username/password |
+| Health check | Docker HEALTHCHECK verifies ttyd is responding |
 
 ### Running security tests
 
@@ -113,35 +130,35 @@ From the host:
 make test-persistence
 ```
 
-This verifies that workspace, hermes config, and home directory survive container restarts AND full image rebuilds.
+## Backup & Restore
 
-## Architecture
+Back up all persistent data (workspace, hermes config, home directory):
 
+```bash
+# Create a backup
+make backup
+# → ./backups/hermes-backup-20260920-143000.tar.gz
+
+# Restore from backup
+bash restore.sh ./backups/hermes-backup-20260920-143000.tar.gz
 ```
-Browser  →  NPM (:443)  →  Docker Container (:7681)
-                               ├── ttyd (web terminal, basic auth)
-                               ├── hermes (AI agent CLI)
-                               ├── git + gh (GitHub operations)
-                               └── node.js (MCP servers)
-                                    │
-                                    ├── /workspace    (volume — your files)
-                                    ├── ~/.hermes      (volume — chats, memory, skills)
-                                    └── network: LAN blocked, internet OK
-```
+
+Backups are compressed tarballs of all three Docker volumes. Restore overwrites current data and restarts the container.
 
 ## Makefile commands
 
 ```
-make build          Build the Docker image
-make up             Start the container
-make down           Stop the container
-make restart        Restart the container
-make logs           Follow container logs
-make test-security  Run security verification inside container
-make test-persistence  Run persistence verification from host
-make update         Rebuild image + restart (preserves volumes)
-make status         Show container status + RAM usage
-make clean          ⚠ Delete ALL volumes (destroys hermes data)
+make build              Build the Docker image
+make up                 Start the container
+make down               Stop the container
+make restart            Restart the container
+make logs               Follow container logs
+make test-security      Run security verification inside container
+make test-persistence   Run persistence verification from host
+make update             Rebuild image + restart (preserves volumes)
+make status             Show container status + RAM usage
+make backup             Backup all volumes to ./backups/
+make clean              ⚠ Delete ALL volumes (destroys hermes data)
 ```
 
 ## Updating
@@ -161,6 +178,21 @@ make update
 ```
 
 Your chats, memory, skills, and workspace files are preserved across updates (they live in Docker volumes, not in the image).
+
+## Architecture
+
+```
+Browser  →  NPM (:443)  →  Docker Container (:7681)
+                               ├── ttyd (web terminal, basic auth)
+                               ├── hermes (AI agent CLI)
+                               ├── git + gh (GitHub operations)
+                               ├── GitHub MCP (auto-configured)
+                               └── node.js (MCP servers)
+                                    │
+                                    ├── /workspace    (volume — your files)
+                                    ├── ~/.hermes      (volume — chats, memory, skills)
+                                    └── network: LAN blocked, internet OK
+```
 
 ## RAM usage
 
@@ -186,3 +218,6 @@ Expected runtime memory: **300–500 MB**
 
 **Forgot web terminal password**
 → Edit `.env` and run `docker compose up -d` to restart with new credentials.
+
+**GitHub MCP not working**
+→ Make sure `gh auth login` completed successfully inside the container. Run `/gh-mcp-init.sh` to manually trigger MCP configuration. Check with `hermes mcp list`.

@@ -73,6 +73,14 @@ find / -perm /6000 -type f -exec chmod a-s {} + 2>/dev/null || true
 chown -R hermes:hermes /workspace /home/hermes 2>/dev/null || true
 
 # ══════════════════════════════════════════════════════════════════════
+# GITHUB MCP AUTO-CONFIG
+# If gh is authenticated, configure GitHub MCP in Hermes automatically.
+# ══════════════════════════════════════════════════════════════════════
+
+echo "[entrypoint] Checking GitHub MCP auto-config..."
+gosu hermes /gh-mcp-init.sh || echo "[entrypoint] GitHub MCP init skipped (non-fatal)."
+
+# ══════════════════════════════════════════════════════════════════════
 # TTYD AUTHENTICATION
 # ══════════════════════════════════════════════════════════════════════
 
