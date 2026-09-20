@@ -28,10 +28,11 @@ cd hermes-homelab
 nano .env    # change TTYD_USER and TTYD_PASSWORD
 
 # 3. Build and run
-docker compose up -d --build
+make build
+make up
 
 # 4. Open in browser
-# http://<your-homelab-ip>:7681
+# http://<your-homelip>:7681
 ```
 
 On first connect you'll land in a bash shell. Run:
@@ -60,10 +61,10 @@ Once inside the web terminal:
 # Start a chat with Hermes
 hermes chat
 
-# Or use one-shot mode
+# One-shot mode
 hermes -z "write a python script that fetches weather data"
 
-# Configure model/provider at any time
+# Configure model/provider
 hermes config set provider.openai.api_key sk-...
 hermes config set provider.openai.model gpt-4o
 
@@ -71,11 +72,54 @@ hermes config set provider.openai.model gpt-4o
 hermes status
 ```
 
+## Security
+
+See [SECURITY-AUDIT.md](SECURITY-AUDIT.md) for the full threat model.
+
+### Security layers
+
+| Layer | What it does |
+|---|---|
+| Non-root user | Container runs as uid 1000 (hermes), not root |
+| read_only rootfs | Container filesystem is read-only, only /workspace and /tmp are writable |
+| no-new-privileges | Setuid binaries cannot escalate to root |
+| setuid removal | All setuid/setgid binaries stripped at build and runtime |
+| IPv4 iptables | All RFC1918 ranges (10.x, 172.16-31.x, 192.168.x) blocked |
+| IPv6 fully blocked | ip6tables DROP all + sysctl disable_ipv6 |
+| Multicast blocked | No LAN discovery via mDNS/SSDP |
+| DNS forced | Only 1.1.1.1 and 8.8.8.8 (no Docker internal DNS leaking LAN names) |
+| cap_drop ALL | All Linux capabilities dropped except NET_ADMIN |
+| No Docker socket | Docker socket is NOT mounted — no container escape |
+| Resource limits | nproc=512 (fork bomb protection), nofile=65536 |
+| TTYD basic auth | Web terminal requires username/password |
+
+### Running security tests
+
+After starting the container:
+
+```bash
+# From inside the web terminal:
+bash /workspace/security-test.sh
+
+# Or from the host:
+make test-security
+```
+
+### Running persistence tests
+
+From the host:
+
+```bash
+make test-persistence
+```
+
+This verifies that workspace, hermes config, and home directory survive container restarts AND full image rebuilds.
+
 ## Architecture
 
 ```
 Browser  →  NPM (:443)  →  Docker Container (:7681)
-                               ├── ttyd (web terminal)
+                               ├── ttyd (web terminal, basic auth)
                                ├── hermes (AI agent CLI)
                                ├── git + gh (GitHub operations)
                                └── node.js (MCP servers)
@@ -85,37 +129,60 @@ Browser  →  NPM (:443)  →  Docker Container (:7681)
                                     └── network: LAN blocked, internet OK
 ```
 
-## Security model
+## Makefile commands
 
-| Threat | Mitigation |
-|---|---|
-| AI accesses your media files | Only `/workspace` is mounted; no access to host filesystem |
-| AI scans your LAN | iptables drops all RFC1918 traffic inside container |
-| AI resolves LAN hostnames | DNS forced to 1.1.1.1 and 8.8.8.8 |
-| Container breakout | Non-root user, read-only rootfs, cap_drop ALL (NET_ADMIN for iptables only) |
-| Unauthorized web access | Basic auth on ttyd (set in `.env`) |
-
-## Volumes
-
-| Volume | Container path | Purpose |
-|---|---|---|
-| `hermes-workspace` | `/workspace` | AI-created files, projects, code |
-| `hermes-config` | `/home/hermes/.hermes` | Chats, memory, skills, MCP config |
-| `hermes-home` | `/home/hermes` | Git config, gh auth, shell history |
+```
+make build          Build the Docker image
+make up             Start the container
+make down           Stop the container
+make restart        Restart the container
+make logs           Follow container logs
+make test-security  Run security verification inside container
+make test-persistence  Run persistence verification from host
+make update         Rebuild image + restart (preserves volumes)
+make status         Show container status + RAM usage
+make clean          ⚠ Delete ALL volumes (destroys hermes data)
+```
 
 ## Updating
 
 ```bash
-cd hermes-homelab
-docker compose build --no-cache
-docker compose up -d
+# Pull latest changes and rebuild (preserves all data)
+git pull
+make update
 ```
+
+To update the Hermes Agent version itself:
+
+```bash
+# Edit Dockerfile: change hermes-agent version if pinned
+# Then rebuild:
+make update
+```
+
+Your chats, memory, skills, and workspace files are preserved across updates (they live in Docker volumes, not in the image).
 
 ## RAM usage
 
 Expected runtime memory: **300–500 MB**
 
-- Python + Hermes: ~200MB
-- Node.js (when MCPs are active): ~80MB
-- ttyd: ~2MB
-- OS overhead: ~50MB
+| Component | RAM |
+|---|---|
+| Python + Hermes | ~200MB |
+| Node.js (when MCPs active) | ~80MB |
+| ttyd | ~2MB |
+| OS overhead | ~50MB |
+
+## Troubleshooting
+
+**Terminal says "WARNING: iptables not available"**
+→ The container needs NET_ADMIN capability. Check that `cap_add: - NET_ADMIN` is in docker-compose.yml.
+
+**Can't connect to AI API**
+→ Check that your API key is set (`hermes config`). The container allows outbound HTTPS (port 443) and HTTP (port 80) but blocks all other ports.
+
+**"Permission denied" on workspace files**
+→ Run `docker exec hermes-homelab chown -R hermes:hermes /workspace` from the host.
+
+**Forgot web terminal password**
+→ Edit `.env` and run `docker compose up -d` to restart with new credentials.

@@ -3,10 +3,10 @@ FROM python:3.12-slim
 ARG NODE_MAJOR=20
 ARG TTYD_VERSION=1.7.7
 
-# System deps
+# System deps — minimal attack surface
 RUN apt-get update && apt-get install -y --no-install-recommends \
     curl wget gnupg ca-certificates apt-transport-https \
-    git openssh-client iptables \
+    git openssh-client iptables iproute2 \
     && curl -fsSL https://deb.nodesource.com/setup_${NODE_MAJOR}.x | bash - \
     && apt-get install -y --no-install-recommends nodejs \
     && apt-get clean && rm -rf /var/lib/apt/lists/*
@@ -26,6 +26,11 @@ RUN curl -fsSL https://cli.github.com/packages/githubcli-archive-keyring.gpg \
     > /etc/apt/sources.list.d/github-cli.list \
     && apt-get update && apt-get install -y --no-install-recommends gh \
     && apt-get clean && rm -rf /var/lib/apt/lists/*
+
+# ── Security hardening ──────────────────────────────────────────────
+
+# Remove setuid/setgid binaries (defense-in-depth)
+RUN find / -perm /6000 -type f -exec chmod a-s {} + 2>/dev/null || true
 
 # Non-root user
 RUN useradd -m -s /bin/bash hermes \

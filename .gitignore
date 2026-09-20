@@ -1,2 +1,6 @@
 .env
 *.log
+*.pyc
+__pycache__/
+.DS_Store
+SECURITY-AUDIT.md
