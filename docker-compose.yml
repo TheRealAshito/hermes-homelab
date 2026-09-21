@@ -6,9 +6,9 @@ services:
     ports:
       - "7681:7681"
     volumes:
-      - hermes-workspace:/workspace
-      - hermes-config:/home/hermes/.hermes
-      - hermes-home:/home/hermes
+      - ${DATA_DIR:-./data}/workspace:/workspace
+      - ${DATA_DIR:-./data}/hermes-config:/home/hermes/.hermes
+      - ${DATA_DIR:-./data}/hermes-home:/home/hermes
     environment:
       - TTYD_USER=${TTYD_USER:-hermes}
       - TTYD_PASSWORD=${TTYD_PASSWORD:-changeme}
@@ -18,7 +18,8 @@ services:
       - NET_ADMIN
       - SETUID
       - SETGID
-      - DAC_OVERRIDE                 # Root needs this to traverse hermes-owned dirs
+      - DAC_OVERRIDE
+      - CHOWN
     security_opt:
       - no-new-privileges:true
     read_only: true
@@ -39,8 +40,6 @@ services:
 networks:
   hermes-net:
     driver: bridge
-
-volumes:
-  hermes-workspace:
-  hermes-config:
-  hermes-home:
+    ipam:
+      config:
+        - subnet: 172.28.0.0/16

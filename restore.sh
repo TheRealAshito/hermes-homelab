@@ -1,15 +1,16 @@
 #!/bin/bash
 # ══════════════════════════════════════════════════════════════════════
-# HERMES HOMELAB — VOLUME RESTORE
-# Restores a backup created by backup.sh into hermes volumes.
-#
-# ⚠ This OVERWRITES current volume data.
+# HERMES HOMELAB — RESTORE
+# Restores a backup created by backup.sh.
+# ⚠ This OVERWRITES current data.
 #
 # Usage: bash restore.sh ./backups/hermes-backup-20260920-143000.tar.gz
 # ══════════════════════════════════════════════════════════════════════
 set -e
 
 BACKUP_FILE="$1"
+SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
+DATA_DIR=$(grep "^DATA_DIR=" "$SCRIPT_DIR/.env" 2>/dev/null | cut -d= -f2 || echo "./data")
 
 if [ -z "$BACKUP_FILE" ]; then
   echo "Usage: bash restore.sh <backup-file.tar.gz>"
@@ -21,10 +22,9 @@ if [ ! -f "$BACKUP_FILE" ]; then
   exit 1
 fi
 
-ABSOLUTE_PATH="$(cd "$(dirname "$BACKUP_FILE")" && pwd)/$(basename "$BACKUP_FILE")"
-
-echo "[restore] WARNING: This will OVERWRITE all hermes volume data."
-echo "[restore] Backup file: $BACKUP_FILE"
+echo "[restore] WARNING: This will OVERWRITE all hermes data."
+echo "[restore] Backup: $BACKUP_FILE"
+echo "[restore] Target: $DATA_DIR"
 read -p "[restore] Continue? (y/N) " -n 1 -r
 echo
 
@@ -34,19 +34,13 @@ if [[ ! $REPLY =~ ^[Yy]$ ]]; then
 fi
 
 echo "[restore] Stopping container..."
-docker compose down
+cd "$SCRIPT_DIR" && docker compose down
 
-echo "[restore] Restoring volumes..."
-docker run --rm \
-  -v hermes-workspace:/data/workspace \
-  -v hermes-config:/data/config \
-  -v hermes-home:/data/home \
-  -v "$ABSOLUTE_PATH:/backup.tar.gz:ro" \
-  alpine:3.19 \
-  sh -c "rm -rf /data/workspace/* /data/config/* /data/home/* && \
-         tar xzf /backup.tar.gz -C /data"
+echo "[restore] Restoring..."
+rm -rf "$DATA_DIR"/{workspace,hermes-config,hermes-home}/*
+tar xzf "$BACKUP_FILE" -C "$SCRIPT_DIR"
 
-echo "[restore] Restarting container..."
+echo "[restore] Restarting..."
 docker compose up -d
 
 echo "[restore] Done."

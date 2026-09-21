@@ -1,4 +1,5 @@
 .env
+data/
 *.log
 *.pyc
 __pycache__/

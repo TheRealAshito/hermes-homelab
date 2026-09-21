@@ -1,4 +1,8 @@
-.PHONY: build up down restart logs test-security test-persistence test clean backup restore status update
+.PHONY: build up down restart logs test-security test-persistence test clean backup restore status update setup
+
+setup:
+	@echo "Run: sudo bash setup-host.sh [/path/to/external/storage]"
+	@echo "This sets up host-level network isolation and storage directory."
 
 build:
 	docker compose build
@@ -17,24 +21,32 @@ logs:
 
 test-security:
 	@echo "Running security tests inside container..."
-	docker exec hermes-homelab bash -c "cat > /tmp/security-test.sh && bash /tmp/security-test.sh" < security-test.sh
+	@cat security-test.sh | docker exec -i --user hermes hermes-homelab bash
 
 test-persistence:
-	@echo "Running persistence tests from host..."
-	bash persistence-test.sh
+	@echo "Running persistence tests..."
+	@docker exec --user hermes hermes-homelab bash -c "echo 'ws' > /workspace/.pt && echo 'cfg' > /home/hermes/.hermes/.pt && echo 'hm' > /home/hermes/.pt" && \
+		docker restart hermes-homelab && sleep 5 && \
+		WS=$$(docker exec --user hermes hermes-homelab cat /workspace/.pt 2>&1) && \
+		CFG=$$(docker exec --user hermes hermes-homelab cat /home/hermes/.hermes/.pt 2>&1) && \
+		HM=$$(docker exec --user hermes hermes-homelab cat /home/hermes/.pt 2>&1) && \
+		docker exec --user hermes hermes-homelab bash -c "rm -f /workspace/.pt /home/hermes/.hermes/.pt /home/hermes/.pt" && \
+		echo "workspace=$$WS config=$$CFG home=$$HM" && \
+		[ "$$WS" = "ws" ] && [ "$$CFG" = "cfg" ] && [ "$$HM" = "hm" ] && echo "✓ 3/3 passed" || echo "✗ Failed"
 
 test: test-security
 	@echo ""
-	@echo "Run 'make test-persistence' separately (requires container restarts)."
+	@echo "Run 'make test-persistence' separately (restarts container)."
 
 clean:
 	docker compose down -v
-	@echo "⚠  All volumes deleted. Hermes data is gone."
+	rm -rf ./data
+	@echo "⚠  All volumes and data deleted."
 
 update:
 	docker compose build --no-cache
 	docker compose up -d
-	@echo "✅ Rebuilt and restarted. Volumes preserved."
+	@echo "✅ Rebuilt and restarted. Data preserved."
 
 status:
 	@docker compose ps
