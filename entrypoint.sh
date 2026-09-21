@@ -5,46 +5,48 @@ echo "[entrypoint] Hermes Homelab starting..."
 
 # ══════════════════════════════════════════════════════════════════════
 # NETWORK ISOLATION
-# Default policy: DROP. Only DNS, HTTP(S) to non-private IPs allowed.
+# INPUT:  ACCEPT (users need to connect to the web terminal)
+# OUTPUT: DROP by default (container cannot reach LAN or internet)
+#         then selectively allow DNS + HTTPS to public IPs only
 # ══════════════════════════════════════════════════════════════════════
 
 # Disable IPv6 (best-effort)
 echo 1 > /proc/sys/net/ipv6/conf/all/disable_ipv6 2>/dev/null || true
 
 if iptables -L INPUT >/dev/null 2>&1; then
-  echo "[entrypoint] Applying IPv4 network isolation..."
+  echo "[entrypoint] Applying network isolation..."
 
   iptables -F INPUT
   iptables -F OUTPUT
 
-  # Default: DROP everything
-  iptables -P INPUT   DROP
-  iptables -P OUTPUT  DROP
+  # INPUT: ACCEPT — allow inbound connections (browser → terminal)
+  iptables -P INPUT ACCEPT
+
+  # OUTPUT: DROP — block all outbound by default
+  iptables -P OUTPUT DROP
+
+  # FORWARD: DROP — container shouldn't forward traffic
   iptables -P FORWARD DROP
 
   # Allow loopback
   iptables -A INPUT  -i lo -j ACCEPT
   iptables -A OUTPUT -o lo -j ACCEPT
 
-  # Allow established/related connections (return traffic from API calls)
-  iptables -A INPUT  -m state --state ESTABLISHED,RELATED -j ACCEPT
+  # Allow established/related (return traffic for allowed outbound)
   iptables -A OUTPUT -m state --state ESTABLISHED,RELATED -j ACCEPT
 
-  # ── BLOCK all private/LAN ranges FIRST (before any port allows) ──
-  for NET in 10.0.0.0/8 172.16.0.0/12 192.168.0.0/16 169.254.0.0/16; do
+  # Block ALL RFC1918 + link-local + multicast OUTBOUND (before port allows)
+  for NET in 10.0.0.0/8 172.16.0.0/12 192.168.0.0/16 169.254.0.0/16 224.0.0.0/4; do
     iptables -A OUTPUT -d "$NET" -j DROP
-    iptables -A INPUT  -s "$NET" -j DROP
   done
-  iptables -A OUTPUT -d 224.0.0.0/4 -j DROP
-  iptables -A INPUT  -s 224.0.0.0/4 -j DROP
 
-  # ── THEN allow DNS and HTTP(S) to public IPs ──
+  # Allow DNS, HTTP, HTTPS to public IPs
   iptables -A OUTPUT -p udp --dport 53 -j ACCEPT
   iptables -A OUTPUT -p tcp --dport 53 -j ACCEPT
   iptables -A OUTPUT -p tcp --dport 443 -j ACCEPT
   iptables -A OUTPUT -p tcp --dport 80  -j ACCEPT
 
-  echo "[entrypoint] Network isolation active (default DROP, LAN blocked)."
+  echo "[entrypoint] Network isolation active (inbound OK, outbound LAN blocked)."
 else
   echo "[entrypoint] WARNING: iptables not available — network isolation DISABLED!"
 fi
@@ -54,12 +56,12 @@ if ip6tables -L INPUT >/dev/null 2>&1; then
   echo "[entrypoint] Blocking IPv6..."
   ip6tables -F INPUT
   ip6tables -F OUTPUT
-  ip6tables -P INPUT   DROP
+  ip6tables -P INPUT   ACCEPT
   ip6tables -P OUTPUT  DROP
   ip6tables -P FORWARD DROP
   ip6tables -A INPUT  -i lo -j ACCEPT
   ip6tables -A OUTPUT -o lo -j ACCEPT
-  echo "[entrypoint] IPv6 blocked."
+  echo "[entrypoint] IPv6 outbound blocked."
 fi
 
 # ══════════════════════════════════════════════════════════════════════
