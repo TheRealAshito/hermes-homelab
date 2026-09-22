@@ -19,9 +19,12 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     && apt-get clean && rm -rf /var/lib/apt/lists/*
 
 # ── ttyd (web terminal) ──────────────────────────────────────────────
-RUN wget -qO /usr/local/bin/ttyd \
-    "https://github.com/tsl0922/ttyd/releases/download/${TTYD_VERSION}/ttyd.x86_64" \
-    && chmod +x /usr/local/bin/ttyd
+# curl -fsSL fails on HTTP errors (wget -qO silently writes error pages).
+# Verify the binary actually runs before continuing.
+RUN curl -fsSL -o /usr/local/bin/ttyd \
+      "https://github.com/tsl0922/ttyd/releases/download/${TTYD_VERSION}/ttyd.x86_64" \
+    && chmod +x /usr/local/bin/ttyd \
+    && /usr/local/bin/ttyd --version
 
 # ── Non-root user (must exist before hermes install) ─────────────────
 RUN useradd -m -s /bin/bash hermes \
@@ -29,9 +32,11 @@ RUN useradd -m -s /bin/bash hermes \
     && mkdir -p /home/hermes/.hermes && chown -R hermes:hermes /home/hermes/.hermes
 
 # ── gosu (root → hermes privilege drop) ──────────────────────────────
-RUN ARCH=$(dpkg --print-architecture) && \
-    wget -qO /usr/local/bin/gosu "https://github.com/tianon/gosu/releases/download/1.17/gosu-${ARCH}" \
-    && chmod +x /usr/local/bin/gosu
+RUN ARCH=$(dpkg --print-architecture) \
+    && curl -fsSL -o /usr/local/bin/gosu \
+      "https://github.com/tianon/gosu/releases/download/1.17/gosu-${ARCH}" \
+    && chmod +x /usr/local/bin/gosu \
+    && gosu --version
 
 # ── Hermes Agent (official installer) ────────────────────────────────
 # Runs as hermes via gosu (not su — more reliable in slim images).
