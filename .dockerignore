@@ -1,0 +1,11 @@
+data/
+.git
+.gitignore
+*.md
+*.sh
+!entrypoint.sh
+run.sh
+.env
+.env.example
+Makefile
+docker-compose.yml
