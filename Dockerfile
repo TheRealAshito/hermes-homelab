@@ -47,6 +47,12 @@ RUN ARCH=$(dpkg --print-architecture) \
 RUN gosu hermes bash -c 'curl -fsSL https://hermes-agent.nousresearch.com/install.sh | bash -s -- \
     --skip-browser --skip-computer-use --skip-setup --no-skills'
 
+# Symlink hermes into /usr/local/bin so it's always on PATH
+RUN for f in /home/hermes/.local/bin/*; do \
+      ln -sf "$f" "/usr/local/bin/$(basename "$f")"; \
+    done 2>/dev/null; \
+    /usr/local/bin/hermes --version || echo "WARNING: hermes symlink may be broken"
+
 # ── OpenCode CLI ─────────────────────────────────────────────────────
 RUN npm i -g opencode-ai@latest
 
