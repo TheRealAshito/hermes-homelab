@@ -77,4 +77,3 @@ HEALTHCHECK --interval=30s --timeout=5s --start-period=10s --retries=3 \
     CMD wget -qO /dev/null http://localhost:7681 || exit 1
 
 ENTRYPOINT ["/entrypoint.sh"]
-CMD ["ttyd", "--writable", "-t", "fontSize=14", "-t", "theme={\"background\":\"#1e1e2e\",\"foreground\":\"#cdd6f4\"}", "bash"]

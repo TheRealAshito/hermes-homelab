@@ -86,24 +86,20 @@ echo "[entrypoint] Hermes Homelab starting..."
 } || echo "[entrypoint] GitHub MCP init skipped (non-fatal)."
 
 # ══════════════════════════════════════════════════════════════════════
-# TTYD AUTHENTICATION
+# START TTYD (must succeed — this is the whole point of the container)
+# Build the full command here so --credential goes BEFORE the shell.
+# ttyd syntax: ttyd [options] <command> — anything after <command> is
+# passed to the command, not to ttyd itself.
 # ══════════════════════════════════════════════════════════════════════
 
+TTYD_CMD=(ttyd --writable -t fontSize=14 '-t theme={"background":"#1e1e2e","foreground":"#cdd6f4"}')
+
 if [ -n "$TTYD_USER" ] && [ -n "$TTYD_PASSWORD" ]; then
-  set -- "$@" --credential "$TTYD_USER:$TTYD_PASSWORD"
+  TTYD_CMD+=(--credential "$TTYD_USER:$TTYD_PASSWORD")
 else
   echo "[entrypoint] WARNING: TTYD_USER / TTYD_PASSWORD not set — terminal is OPEN!"
 fi
 
-echo ""
-echo "  ╔══════════════════════════════════════════╗"
-echo "  ║  Hermes Homelab — Web Terminal Ready     ║"
-echo "  ║  Run 'hermes setup' to configure your AI ║"
-echo "  ╚══════════════════════════════════════════╝"
-echo ""
+TTYD_CMD+=(bash)
 
-# ══════════════════════════════════════════════════════════════════════
-# START TTYD (must succeed — this is the whole point of the container)
-# ══════════════════════════════════════════════════════════════════════
-
-exec gosu hermes "$@"
+exec gosu hermes "${TTYD_CMD[@]}"
