@@ -39,12 +39,16 @@ RUN ARCH=$(dpkg --print-architecture) \
     && gosu --version
 
 # ── Hermes Agent (official installer) ────────────────────────────────
+# --dir /opt/hermes-agent: code + venv live OUTSIDE /home/hermes/.hermes
+#   so the data volume mount can never hide the installed binaries.
+# --hermes-home /home/hermes/.hermes: data/config dir (safe to bind-mount).
 RUN gosu hermes bash -c 'curl -fsSL https://hermes-agent.nousresearch.com/install.sh | bash -s -- \
-    --skip-browser --skip-computer-use --skip-setup --no-skills' \
+    --skip-browser --skip-computer-use --skip-setup --no-skills \
+    --dir /opt/hermes-agent --hermes-home /home/hermes/.hermes' \
     && echo "=== Where did hermes land? ===" \
-    && find /home/hermes /usr/local -name 'hermes' -not -path '*/.git/*' -not -path '*/node_modules/*' 2>/dev/null \
-    && echo "=== Contents of ~/.local/bin ===" \
-    && ls -la /home/hermes/.local/bin/ 2>/dev/null || true
+    && find /home/hermes /opt /usr/local -name 'hermes' -not -path '*/.git/*' -not -path '*/node_modules/*' 2>/dev/null \
+    && echo "=== hermes launcher ===" \
+    && cat /home/hermes/.local/bin/hermes 2>/dev/null || true
 
 # ── OpenCode CLI ─────────────────────────────────────────────────────
 RUN npm i -g opencode-ai@latest
