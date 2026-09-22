@@ -47,12 +47,6 @@ RUN ARCH=$(dpkg --print-architecture) \
 RUN gosu hermes bash -c 'curl -fsSL https://hermes-agent.nousresearch.com/install.sh | bash -s -- \
     --skip-browser --skip-computer-use --skip-setup --no-skills'
 
-# Symlink hermes into /usr/local/bin so it's always on PATH
-RUN for f in /home/hermes/.local/bin/*; do \
-      ln -sf "$f" "/usr/local/bin/$(basename "$f")"; \
-    done 2>/dev/null; \
-    /usr/local/bin/hermes --version || echo "WARNING: hermes symlink may be broken"
-
 # ── OpenCode CLI ─────────────────────────────────────────────────────
 RUN npm i -g opencode-ai@latest
 
@@ -67,9 +61,8 @@ RUN curl -fsSL https://cli.github.com/packages/githubcli-archive-keyring.gpg \
 # ── Security hardening ───────────────────────────────────────────────
 RUN find / -perm /6000 -type f -exec chmod a-s {} + 2>/dev/null || true
 
-# ── PATH for hermes + opencode ───────────────────────────────────────
-RUN echo 'export PATH="$HOME/.local/bin:$HOME/.opencode/bin:$HOME/.hermes/hermes-agent/venv/bin:/usr/local/bin:$PATH"' >> /home/hermes/.bashrc \
-    && chown hermes:hermes /home/hermes/.bashrc
+# PATH for hermes + opencode (ENV so it works in every shell, not just .bashrc)
+ENV PATH="/home/hermes/.local/bin:/home/hermes/.opencode/bin:/usr/local/bin:${PATH}"
 
 # ── Entrypoint scripts ───────────────────────────────────────────────
 COPY entrypoint.sh /entrypoint.sh
