@@ -45,10 +45,18 @@ hermes setup
 
 This walks you through configuring your AI provider (API key, endpoint, model).
 
-### Without docker-compose (docker run)
+### Without docker-compose (docker build + docker run)
+
+Build the image first:
 
 ```bash
+cd hermes-homelab
 docker build -t hermes-homelab .
+```
+
+Then run with all the required flags:
+
+```bash
 docker run -d \
   --name hermes-homelab \
   --restart unless-stopped \
@@ -57,6 +65,9 @@ docker run -d \
   --cap-add SETGID \
   --cap-add DAC_OVERRIDE \
   --cap-add CHOWN \
+  --security-opt no-new-privileges:true \
+  --dns 1.1.1.1 \
+  --dns 8.8.8.8 \
   -p 7681:7681 \
   -e TTYD_USER=hermes \
   -e TTYD_PASSWORD=yourpassword \
@@ -64,6 +75,43 @@ docker run -d \
   -v /path/to/your/data/hermes-home:/home/hermes \
   hermes-homelab
 ```
+
+**What each flag does:**
+
+| Flag | Why |
+|---|---|
+| `--cap-add NET_ADMIN` | **Required** — lets the container set up iptables network isolation (blocks LAN access). Without this you get "iptables not available" and the AI can reach your local network. |
+| `--cap-add SETUID SETGID` | Required — `gosu` drops from root to the `hermes` user at startup |
+| `--cap-add DAC_OVERRIDE CHOWN` | Required — `gosu` needs these to switch file ownership during startup |
+| `--security-opt no-new-privileges:true` | Blocks setuid escalation (defense in depth) |
+| `--dns 1.1.1.1 --dns 8.8.8.8` | Forces public DNS (prevents leaking local hostnames via Docker's internal DNS) |
+| `-p 7681:7681` | Web terminal port |
+| `-e TTYD_USER` / `-e TTYD_PASSWORD` | Web terminal login credentials. **Without these the terminal is open to anyone on your network.** |
+| `-v .../workspace:/workspace` | Persistent storage for AI-created files |
+| `-v .../hermes-home:/home/hermes` | Persistent storage for chats, memory, skills, config, API keys |
+
+**Minimal (no network isolation, no auth — testing only):**
+
+```bash
+docker run -d \
+  --name hermes-homelab \
+  --restart unless-stopped \
+  -p 7681:7681 \
+  hermes-homelab
+```
+
+**Update (docker run):**
+
+```bash
+cd hermes-homelab
+git pull
+docker build -t hermes-homelab .
+docker stop hermes-homelab
+docker rm hermes-homelab
+# then re-run the same docker run command above
+```
+
+Your data in the volume paths survives `docker stop`/`rm` — only the container is replaced.
 
 ## Nginx Proxy Manager setup
 
