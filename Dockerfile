@@ -39,13 +39,12 @@ RUN ARCH=$(dpkg --print-architecture) \
     && gosu --version
 
 # ── Hermes Agent (official installer) ────────────────────────────────
-# Runs as hermes via gosu (not su — more reliable in slim images).
-# --skip-browser: no Playwright in headless web terminal.
-# --skip-computer-use: no cua-driver needed.
-# --skip-setup: skip interactive wizard (user runs `hermes setup` later).
-# --no-skills: seed no bundled skills (saves image size).
 RUN gosu hermes bash -c 'curl -fsSL https://hermes-agent.nousresearch.com/install.sh | bash -s -- \
-    --skip-browser --skip-computer-use --skip-setup --no-skills'
+    --skip-browser --skip-computer-use --skip-setup --no-skills' \
+    && echo "=== Where did hermes land? ===" \
+    && find /home/hermes /usr/local -name 'hermes' -not -path '*/.git/*' -not -path '*/node_modules/*' 2>/dev/null \
+    && echo "=== Contents of ~/.local/bin ===" \
+    && ls -la /home/hermes/.local/bin/ 2>/dev/null || true
 
 # ── OpenCode CLI ─────────────────────────────────────────────────────
 RUN npm i -g opencode-ai@latest
