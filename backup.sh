@@ -30,7 +30,7 @@ else
   docker run --rm \
     -v hermes-homelab_hermes-workspace:/data/workspace:ro \
     -v hermes-homelab_hermes-config:/data/config:ro \
-    -v hermes-homelab_hermes-home:/data/home:ro \
+    -v hermes-homelab_hermes-config:/data/home:ro \
     -v "$(cd "$BACKUP_DIR" && pwd):/backup" \
     alpine:3.19 \
     tar czf "/backup/hermes-backup-$TIMESTAMP.tar.gz" -C /data workspace config home

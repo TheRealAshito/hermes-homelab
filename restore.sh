@@ -37,7 +37,7 @@ echo "[restore] Stopping container..."
 cd "$SCRIPT_DIR" && docker compose down
 
 echo "[restore] Restoring..."
-rm -rf "$DATA_DIR"/{workspace,hermes-config,hermes-home}/*
+rm -rf "$DATA_DIR"/{workspace,hermes-config}/*
 tar xzf "$BACKUP_FILE" -C "$SCRIPT_DIR"
 
 echo "[restore] Restarting..."

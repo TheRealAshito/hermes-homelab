@@ -29,13 +29,9 @@ echo "[1/4] Creating test markers in volumes..."
 cx "echo 'persistence-test-marker' > /workspace/.persistence-test"
 pass "Created /workspace/.persistence-test"
 
-# Config marker
-cx "mkdir -p /home/hermes/.hermes && echo 'config-marker' > /home/hermes/.hermes/.persistence-test"
+# Home marker (in ~/.hermes which IS mounted)
+cx "echo 'config-marker' > /home/hermes/.hermes/.persistence-test"
 pass "Created ~/.hermes/.persistence-test"
-
-# Home marker
-cx "echo 'home-marker' > /home/hermes/.persistence-test"
-pass "Created ~/.persistence-test"
 
 # ── 2. Restart container (no rebuild) ───────────────────────────────
 echo ""
@@ -53,12 +49,6 @@ if cx "cat /home/hermes/.hermes/.persistence-test" 2>/dev/null | grep -q "config
   pass "Hermes config survives restart"
 else
   fail "Hermes config lost on restart"
-fi
-
-if cx "cat /home/hermes/.persistence-test" 2>/dev/null | grep -q "home-marker"; then
-  pass "Home dir survives restart"
-else
-  fail "Home dir lost on restart"
 fi
 
 # ── 3. Rebuild container ────────────────────────────────────────────
@@ -79,16 +69,10 @@ else
   fail "Hermes config lost on rebuild"
 fi
 
-if cx "cat /home/hermes/.persistence-test" 2>/dev/null | grep -q "home-marker"; then
-  pass "Home dir survives rebuild"
-else
-  fail "Home dir lost on rebuild"
-fi
-
 # ── 4. Clean up test markers ────────────────────────────────────────
 echo ""
 echo "[4/4] Cleaning up test markers..."
-cx "rm -f /workspace/.persistence-test /home/hermes/.hermes/.persistence-test /home/hermes/.persistence-test"
+cx "rm -f /workspace/.persistence-test /home/hermes/.hermes/.persistence-test"
 pass "Cleaned up"
 
 # ── Summary ─────────────────────────────────────────────────────────

@@ -25,14 +25,13 @@ test-security:
 
 test-persistence:
 	@echo "Running persistence tests..."
-	@docker exec --user hermes hermes-homelab bash -c "echo 'ws' > /workspace/.pt && echo 'cfg' > /home/hermes/.hermes/.pt && echo 'hm' > /home/hermes/.pt" && \
+	@docker exec --user hermes hermes-homelab bash -c "echo 'ws' > /workspace/.pt && echo 'cfg' > /home/hermes/.hermes/.pt" && \
 		docker restart hermes-homelab && sleep 5 && \
 		WS=$$(docker exec --user hermes hermes-homelab cat /workspace/.pt 2>&1) && \
 		CFG=$$(docker exec --user hermes hermes-homelab cat /home/hermes/.hermes/.pt 2>&1) && \
-		HM=$$(docker exec --user hermes hermes-homelab cat /home/hermes/.pt 2>&1) && \
-		docker exec --user hermes hermes-homelab bash -c "rm -f /workspace/.pt /home/hermes/.hermes/.pt /home/hermes/.pt" && \
-		echo "workspace=$$WS config=$$CFG home=$$HM" && \
-		[ "$$WS" = "ws" ] && [ "$$CFG" = "cfg" ] && [ "$$HM" = "hm" ] && echo "✓ 3/3 passed" || echo "✗ Failed"
+		docker exec --user hermes hermes-homelab bash -c "rm -f /workspace/.pt /home/hermes/.hermes/.pt" && \
+		echo "workspace=$$WS config=$$CFG" && \
+		[ "$$WS" = "ws" ] && [ "$$CFG" = "cfg" ] && echo "✓ 2/2 passed" || echo "✗ Failed"
 
 test: test-security
 	@echo ""

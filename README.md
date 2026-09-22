@@ -1,117 +1,53 @@
 # hermes-homelab
 
-Run [Hermes Agent](https://github.com/nousresearch/hermes-agent) as a sandboxed Docker container on your homelab. Access it from any browser.
+Run [Hermes Agent](https://github.com/nousresearch/hermes-agent) + AI coding CLIs as a sandboxed Docker container on your homelab. Access it from any browser.
 
 ## What it does
 
-- Runs Hermes Agent in an isolated Docker container
+- Runs **Hermes Agent** + **6 AI coding CLIs** in an isolated Docker container
 - Web-based terminal on port 7681 (works on desktop and mobile)
-- **Filesystem isolation**: AI can only write to `/workspace` inside the container
 - **Network isolation**: blocks all LAN access (192.168.x, 10.x, 172.16-31.x), internet-only for cloud API calls
 - Persistent storage for chats, memory, skills, and workspace files
-- Supports any OpenAI-compatible API (MiMo, DeepSeek, Claude, OpenAI, etc.)
-- GitHub MCP auto-config when `gh auth login` is done inside the container
 - Backup/restore for all persistent data
+
+## Included tools
+
+| Tool | Command | Description |
+|---|---|---|
+| Hermes Agent | `hermes` | Nous Research AI agent |
+| OpenCode | `opencode` | Open-source coding agent |
+| OpenAI Codex | `codex` | OpenAI coding agent |
+| Claude Code | `claude` | Anthropic coding agent |
+| MiMo Code | `mimo` | Xiaomi coding agent |
+| Antigravity | `agy` | Google coding agent |
+| GitHub CLI | `gh` | GitHub operations |
 
 ## Requirements
 
-- Docker + Docker Compose on your homelab
+- Docker on your homelab
 - ~500MB RAM available
 - A cloud AI API key (OpenAI-compatible endpoint)
 
 ## Quick start
 
 ```bash
-# 1. Clone
 git clone https://github.com/TheRealAshito/hermes-homelab.git
 cd hermes-homelab
-
-# 2. Set your web terminal password
-nano .env    # change TTYD_USER and TTYD_PASSWORD
-
-# 3. Build and run
-make build
-make up
-
-# 4. Open in browser
-# http://<your-homelab-ip>:7681
+./run.sh
 ```
 
-On first connect you'll land in a bash shell. Run:
+First run asks for a username and password (saved to `.env`). Then open `http://<your-homelab-ip>:7681` and run `hermes setup` to configure your AI provider.
+
+### Other commands
 
 ```bash
-hermes setup
+./run.sh update       # Rebuild + restart (preserves data)
+./run.sh passwd       # Change web terminal password
+./run.sh shell        # Open a shell in the running container
+./run.sh status       # Container status + resource usage
+./run.sh stop         # Stop the container
+./run.sh logs         # Follow container logs
 ```
-
-This walks you through configuring your AI provider (API key, endpoint, model).
-
-### Without docker-compose (docker build + docker run)
-
-Build the image first:
-
-```bash
-cd hermes-homelab
-docker build -t hermes-homelab .
-```
-
-Then run with all the required flags:
-
-```bash
-docker run -d \
-  --name hermes-homelab \
-  --restart unless-stopped \
-  --cap-add NET_ADMIN \
-  --cap-add SETUID \
-  --cap-add SETGID \
-  --cap-add DAC_OVERRIDE \
-  --cap-add CHOWN \
-  --security-opt no-new-privileges:true \
-  --dns 1.1.1.1 \
-  --dns 8.8.8.8 \
-  -p 7681:7681 \
-  -e TTYD_USER=hermes \
-  -e TTYD_PASSWORD=yourpassword \
-  -v /path/to/your/data/workspace:/workspace \
-  -v /path/to/your/data/hermes-config:/home/hermes/.hermes \
-  hermes-homelab
-```
-
-**What each flag does:**
-
-| Flag | Why |
-|---|---|
-| `--cap-add NET_ADMIN` | **Required** — lets the container set up iptables network isolation (blocks LAN access). Without this you get "iptables not available" and the AI can reach your local network. |
-| `--cap-add SETUID SETGID` | Required — `gosu` drops from root to the `hermes` user at startup |
-| `--cap-add DAC_OVERRIDE CHOWN` | Required — `gosu` needs these to switch file ownership during startup |
-| `--security-opt no-new-privileges:true` | Blocks setuid escalation (defense in depth) |
-| `--dns 1.1.1.1 --dns 8.8.8.8` | Forces public DNS (prevents leaking local hostnames via Docker's internal DNS) |
-| `-p 7681:7681` | Web terminal port |
-| `-e TTYD_USER` / `-e TTYD_PASSWORD` | Web terminal login credentials. **Without these the terminal is open to anyone on your network.** |
-| `-v .../workspace:/workspace` | Persistent storage for AI-created files |
-| `-v .../hermes-config:/home/hermes/.hermes` | Persistent storage for chats, memory, skills, config, API keys. **Do NOT mount all of `/home/hermes`** — that hides the installed binaries. |
-
-**Minimal (no network isolation, no auth — testing only):**
-
-```bash
-docker run -d \
-  --name hermes-homelab \
-  --restart unless-stopped \
-  -p 7681:7681 \
-  hermes-homelab
-```
-
-**Update (docker run):**
-
-```bash
-cd hermes-homelab
-git pull
-docker build -t hermes-homelab .
-docker stop hermes-homelab
-docker rm hermes-homelab
-# then re-run the same docker run command above
-```
-
-Your data in the volume paths survives `docker stop`/`rm` — only the container is replaced.
 
 ## Nginx Proxy Manager setup
 
@@ -165,16 +101,16 @@ See [SECURITY-AUDIT.md](SECURITY-AUDIT.md) for the full threat model.
 | Layer | What it does |
 |---|---|
 | Non-root user | Container runs as uid 1000 (hermes), not root |
-| read_only rootfs | Container filesystem is read-only, only /workspace and /tmp are writable |
 | no-new-privileges | Setuid binaries cannot escalate to root |
-| setuid removal | All setuid/setgid binaries stripped at build and runtime |
-| IPv4 iptables | All RFC1918 ranges (10.x, 172.16-31.x, 192.168.x) blocked |
+| cap_drop ALL | All Linux capabilities dropped except the 5 needed (NET_ADMIN, SETUID, SETGID, DAC_OVERRIDE, CHOWN) |
+| setuid removal | All setuid/setgid binaries stripped at build |
+| IPv4 iptables | All RFC1918 ranges (10.x, 172.16-31.x, 192.168.x) blocked outbound |
 | IPv6 fully blocked | ip6tables DROP all + sysctl disable_ipv6 |
 | Multicast blocked | No LAN discovery via mDNS/SSDP |
 | DNS forced | Only 1.1.1.1 and 8.8.8.8 (no Docker internal DNS leaking LAN names) |
-| cap_drop ALL | All Linux capabilities dropped except NET_ADMIN |
 | No Docker socket | Docker socket is NOT mounted — no container escape |
 | Resource limits | nproc=512 (fork bomb protection), nofile=65536 |
+| tmpfs | /tmp and /run are tmpfs (not persisted, limited size) |
 | TTYD basic auth | Web terminal requires username/password |
 | Health check | Docker HEALTHCHECK verifies ttyd is responding |
 
@@ -253,12 +189,12 @@ Your chats, memory, skills, and workspace files are preserved across updates (th
 Browser  →  NPM (:443)  →  Docker Container (:7681)
                                ├── ttyd (web terminal, basic auth)
                                ├── hermes (AI agent CLI)
+                               ├── opencode / codex / claude / mimo / agy
                                ├── git + gh (GitHub operations)
-                               ├── GitHub MCP (auto-configured)
                                └── node.js (MCP servers)
                                     │
                                     ├── /workspace    (volume — your files)
-                                    ├── ~/.hermes      (volume — chats, memory, skills)
+                                    ├── ~/.hermes     (volume — chats, memory, skills)
                                     └── network: LAN blocked, internet OK
 ```
 
@@ -285,7 +221,7 @@ Expected runtime memory: **300–500 MB**
 → Run `docker exec hermes-homelab chown -R hermes:hermes /workspace` from the host.
 
 **Forgot web terminal password**
-→ Edit `.env` and run `docker compose up -d` to restart with new credentials.
+→ Run `./run.sh passwd` to change it, then `./run.sh stop && ./run.sh run` to restart.
 
-**GitHub MCP not working**
-→ Make sure `gh auth login` completed successfully inside the container. Run `/gh-mcp-init.sh` to manually trigger MCP configuration. Check with `hermes mcp list`.
+**A tool isn't found inside the terminal**
+→ Check `./run.sh shell` and run `which <tool>`. All tools should be in `/usr/local/bin/` or `/usr/local/bin/`.

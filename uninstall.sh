@@ -27,7 +27,7 @@ cd "$SCRIPT_DIR" && docker compose down 2>/dev/null && echo "      ✓ Container
 # ── 2. Remove Docker image ──────────────────────────────────────────
 echo ""
 echo "[2/4] Removing Docker image..."
-docker rmi hermes-homelab-hermes:latest 2>/dev/null && echo "      ✓ Image removed." || echo "      (no image found)"
+docker rmi hermes-homelab:latest 2>/dev/null && echo "      ✓ Image removed." || echo "      (no image found)"
 
 # ── 3. Remove host iptables rules ───────────────────────────────────
 echo ""

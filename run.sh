@@ -6,11 +6,13 @@
 #   ./run.sh              Build + run (prompts for password on first run)
 #   ./run.sh update       Rebuild + restart (preserves ./data/ and login)
 #   ./run.sh passwd       Change web terminal password
+#   ./run.sh shell        Open a shell in the running container
+#   ./run.sh status       Show container status + resource usage
 #   ./run.sh stop         Stop the container
 #   ./run.sh logs         Follow container logs
 #
 # Data persists in ./data/ relative to this script.
-# Login saved in .env (git-ignored).
+# Login saved in .env (git-ignored, chmod 600).
 # Override with: DATA_DIR=/some/path PORT=8080 ./run.sh
 # ──────────────────────────────────────────────────────────────────────
 set -e
@@ -21,15 +23,20 @@ ENV_FILE="$SCRIPT_DIR/.env"
 IMAGE="hermes-homelab"
 CONTAINER="hermes-homelab"
 
-# ── Load saved settings ──────────────────────────────────────────────
-
-if [ -f "$ENV_FILE" ]; then
-    source "$ENV_FILE"
-fi
+# ── Load saved settings (safe parse, no source) ──────────────────────
 
 PORT="${PORT:-7681}"
 TTYD_USER="${TTYD_USER:-hermes}"
 TTYD_PASSWORD="${TTYD_PASSWORD:-}"
+
+if [ -f "$ENV_FILE" ]; then
+    _v=$(grep '^PORT=' "$ENV_FILE" | cut -d= -f2-)
+    [ -n "$_v" ] && PORT="$_v"
+    _v=$(grep '^TTYD_USER=' "$ENV_FILE" | cut -d= -f2-)
+    [ -n "$_v" ] && TTYD_USER="$_v"
+    _v=$(grep '^TTYD_PASSWORD=' "$ENV_FILE" | cut -d= -f2-)
+    [ -n "$_v" ] && TTYD_PASSWORD="$_v"
+fi
 
 # ── Prompt for password if missing or default ─────────────────────────
 
@@ -55,6 +62,7 @@ prompt_password() {
         fi
     done
 
+    umask 077
     cat > "$ENV_FILE" <<EOF
 PORT=$PORT
 TTYD_USER=$TTYD_USER
@@ -88,12 +96,17 @@ do_run() {
     docker run -d \
         --name "$CONTAINER" \
         --restart unless-stopped \
+        --cap-drop ALL \
         --cap-add NET_ADMIN \
         --cap-add SETUID \
         --cap-add SETGID \
         --cap-add DAC_OVERRIDE \
         --cap-add CHOWN \
         --security-opt no-new-privileges:true \
+        --tmpfs /tmp:size=256m \
+        --tmpfs /run:size=64m \
+        --ulimit nproc=512 \
+        --ulimit nofile=65536 \
         --dns 1.1.1.1 \
         --dns 8.8.8.8 \
         -p "$PORT:7681" \
@@ -104,6 +117,7 @@ do_run() {
         "$IMAGE"
 
     echo "Done! Open http://<your-ip>:$PORT in a browser."
+    echo "Tools: hermes, opencode, codex, claude, mimo, agy, gh"
     echo "Run 'hermes setup' inside the terminal to configure your AI provider."
 }
 
@@ -124,6 +138,14 @@ case "${1:-run}" in
         echo ""
         echo "  Restart to apply: ./run.sh stop && ./run.sh run"
         ;;
+    shell)
+        docker exec -it "$CONTAINER" bash
+        ;;
+    status)
+        docker ps -a --filter "name=$CONTAINER" --format "table {{.Names}}\t{{.Status}}\t{{.Ports}}"
+        echo ""
+        docker stats "$CONTAINER" --no-stream --format "  CPU: {{.CPUPerc}}  MEM: {{.MemUsage}}" 2>/dev/null || true
+        ;;
     stop)
         docker stop "$CONTAINER" 2>/dev/null || true
         docker rm "$CONTAINER" 2>/dev/null || true
@@ -133,7 +155,7 @@ case "${1:-run}" in
         docker logs -f "$CONTAINER"
         ;;
     *)
-        echo "Usage: $0 [run|update|passwd|stop|logs]"
+        echo "Usage: $0 [run|update|passwd|shell|status|stop|logs]"
         exit 1
         ;;
 esac

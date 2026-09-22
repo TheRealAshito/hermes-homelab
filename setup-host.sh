@@ -54,9 +54,9 @@ echo "[2/3] Setting up storage directory..."
 
 DATA_DIR="${1:-$SCRIPT_DIR/data}"
 
-mkdir -p "$DATA_DIR"/{workspace,hermes-config,hermes-home}
+mkdir -p "$DATA_DIR"/{workspace,hermes-config}
 echo "      Storage directory: $DATA_DIR"
-echo "      ✓ Created: workspace/, hermes-config/, hermes-home/"
+echo "      ✓ Created: workspace/, hermes-config/"
 
 # Create .env with DATA_DIR if not exists
 if ! grep -q "^DATA_DIR=" "$SCRIPT_DIR/.env" 2>/dev/null; then
@@ -73,10 +73,9 @@ echo "[3/3] Creating symlinks for easy access..."
 
 if [ "$DATA_DIR" != "$SCRIPT_DIR/data" ]; then
   # Create symlinks from project dir to external storage
+  mkdir -p "$SCRIPT_DIR/data"
   ln -sfn "$DATA_DIR/workspace" "$SCRIPT_DIR/data/workspace"
   ln -sfn "$DATA_DIR/hermes-config" "$SCRIPT_DIR/data/hermes-config"
-  ln -sfn "$DATA_DIR/hermes-home" "$SCRIPT_DIR/data/hermes-home"
-  mkdir -p "$SCRIPT_DIR/data"
   ln -sfn "$DATA_DIR" "$SCRIPT_DIR/data/external"
   echo "      ✓ Symlinks created in ./data/ → $DATA_DIR"
 else
