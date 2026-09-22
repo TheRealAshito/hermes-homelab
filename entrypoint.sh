@@ -82,7 +82,7 @@ echo "[entrypoint] Hermes Homelab starting..."
 
 {
   echo "[entrypoint] Checking GitHub MCP auto-config..."
-  gosu hermes /gh-mcp-init.sh 2>&1
+  timeout 5 gosu hermes /gh-mcp-init.sh 2>&1
 } || echo "[entrypoint] GitHub MCP init skipped (non-fatal)."
 
 # ══════════════════════════════════════════════════════════════════════
