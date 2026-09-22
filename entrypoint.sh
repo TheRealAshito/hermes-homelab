@@ -65,11 +65,16 @@ if ip6tables -L INPUT >/dev/null 2>&1; then
 fi
 
 # ══════════════════════════════════════════════════════════════════════
-# FILESYSTEM HARDENING
+# FIX OWNERSHIP ON PERSISTENT DIRS (best-effort, non-fatal)
+# Only touches top-level entries — full recursive chown on every start
+# is slow and fights with bind-mounted volumes that already have correct
+# ownership from setup-host.sh.
 # ══════════════════════════════════════════════════════════════════════
 
-find / -perm /6000 -type f -exec chmod a-s {} + 2>/dev/null || true
-chown -R hermes:hermes /workspace /home/hermes 2>/dev/null || true
+chown hermes:hermes /workspace 2>/dev/null || true
+chown -R hermes:hermes /home/hermes/.local 2>/dev/null || true
+chown -R hermes:hermes /home/hermes/.hermes 2>/dev/null || true
+chown hermes:hermes /home/hermes 2>/dev/null || true
 
 # ══════════════════════════════════════════════════════════════════════
 # GITHUB MCP AUTO-CONFIG

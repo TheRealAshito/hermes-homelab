@@ -45,6 +45,26 @@ hermes setup
 
 This walks you through configuring your AI provider (API key, endpoint, model).
 
+### Without docker-compose (docker run)
+
+```bash
+docker build -t hermes-homelab .
+docker run -d \
+  --name hermes-homelab \
+  --restart unless-stopped \
+  --cap-add NET_ADMIN \
+  --cap-add SETUID \
+  --cap-add SETGID \
+  --cap-add DAC_OVERRIDE \
+  --cap-add CHOWN \
+  -p 7681:7681 \
+  -e TTYD_USER=hermes \
+  -e TTYD_PASSWORD=yourpassword \
+  -v /path/to/your/data/workspace:/workspace \
+  -v /path/to/your/data/hermes-home:/home/hermes \
+  hermes-homelab
+```
+
 ## Nginx Proxy Manager setup
 
 To make it available as `hermes.lan`:
