@@ -72,7 +72,7 @@ docker run -d \
   -e TTYD_USER=hermes \
   -e TTYD_PASSWORD=yourpassword \
   -v /path/to/your/data/workspace:/workspace \
-  -v /path/to/your/data/hermes-home:/home/hermes \
+  -v /path/to/your/data/hermes-config:/home/hermes/.hermes \
   hermes-homelab
 ```
 
@@ -88,7 +88,7 @@ docker run -d \
 | `-p 7681:7681` | Web terminal port |
 | `-e TTYD_USER` / `-e TTYD_PASSWORD` | Web terminal login credentials. **Without these the terminal is open to anyone on your network.** |
 | `-v .../workspace:/workspace` | Persistent storage for AI-created files |
-| `-v .../hermes-home:/home/hermes` | Persistent storage for chats, memory, skills, config, API keys |
+| `-v .../hermes-config:/home/hermes/.hermes` | Persistent storage for chats, memory, skills, config, API keys. **Do NOT mount all of `/home/hermes`** — that hides the installed binaries. |
 
 **Minimal (no network isolation, no auth — testing only):**
 

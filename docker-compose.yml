@@ -8,7 +8,6 @@ services:
     volumes:
       - ${DATA_DIR:-./data}/workspace:/workspace
       - ${DATA_DIR:-./data}/hermes-config:/home/hermes/.hermes
-      - ${DATA_DIR:-./data}/hermes-home:/home/hermes
     environment:
       - TTYD_USER=${TTYD_USER:-hermes}
       - TTYD_PASSWORD=${TTYD_PASSWORD:-changeme}
