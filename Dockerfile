@@ -67,8 +67,7 @@ RUN echo 'export PATH="$HOME/.local/bin:$HOME/.opencode/bin:$HOME/.hermes/hermes
 
 # ── Entrypoint scripts ───────────────────────────────────────────────
 COPY entrypoint.sh /entrypoint.sh
-COPY gh-mcp-init.sh /gh-mcp-init.sh
-RUN chmod +x /entrypoint.sh /gh-mcp-init.sh
+RUN chmod +x /entrypoint.sh
 
 WORKDIR /workspace
 EXPOSE 7681
