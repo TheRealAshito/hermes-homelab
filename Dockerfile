@@ -41,9 +41,9 @@ RUN ARCH=$(dpkg --print-architecture) \
 # ── Hermes Agent (official installer) ────────────────────────────────
 # --dir /opt/hermes-agent: code + venv live in the image, never mounted.
 # --hermes-home /home/hermes/.hermes: data/config dir (safe to bind-mount).
-# Then copy the launcher to /usr/local/bin — always on PATH, no gosu/bashrc
-# PATH inheritance issues.
-RUN gosu hermes bash -c 'curl -fsSL https://hermes-agent.nousresearch.com/install.sh | bash -s -- \
+# Then copy the launcher to /usr/local/bin — always on PATH.
+RUN mkdir -p /opt/hermes-agent && chown hermes:hermes /opt/hermes-agent \
+    && gosu hermes bash -c 'curl -fsSL https://hermes-agent.nousresearch.com/install.sh | bash -s -- \
     --skip-browser --skip-computer-use --skip-setup --no-skills \
     --dir /opt/hermes-agent --hermes-home /home/hermes/.hermes' \
     && cp /home/hermes/.local/bin/hermes /usr/local/bin/hermes \
