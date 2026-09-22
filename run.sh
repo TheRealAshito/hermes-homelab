@@ -3,23 +3,66 @@
 # hermes-homelab — one-command install & run
 #
 # Usage:
-#   ./run.sh              Build + run (creates ./data/ if needed)
-#   ./run.sh update       Rebuild + restart (preserves ./data/)
+#   ./run.sh              Build + run (prompts for password on first run)
+#   ./run.sh update       Rebuild + restart (preserves ./data/ and login)
 #   ./run.sh stop         Stop the container
 #   ./run.sh logs         Follow container logs
 #
 # Data persists in ./data/ relative to this script.
-# Override with: DATA_DIR=/some/path ./run.sh
+# Login saved in .env (git-ignored).
+# Override with: DATA_DIR=/some/path PORT=8080 ./run.sh
 # ──────────────────────────────────────────────────────────────────────
 set -e
 
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 DATA_DIR="${DATA_DIR:-$SCRIPT_DIR/data}"
+ENV_FILE="$SCRIPT_DIR/.env"
 IMAGE="hermes-homelab"
 CONTAINER="hermes-homelab"
+
+# ── Load or prompt for settings ──────────────────────────────────────
+
+if [ -f "$ENV_FILE" ]; then
+    source "$ENV_FILE"
+fi
+
 PORT="${PORT:-7681}"
-TTYD_USER="${TTYD_USER:-hermes}"
-TTYD_PASSWORD="${TTYD_PASSWORD:-changeme}"
+TTYD_USER="${TTYD_USER:-}"
+
+# First run: ask for credentials
+if [ -z "$TTYD_USER" ] || [ -z "$TTYD_PASSWORD" ]; then
+    echo ""
+    echo "  ┌──────────────────────────────────────────┐"
+    echo "  │  hermes-homelab — first-time setup        │"
+    echo "  └──────────────────────────────────────────┘"
+    echo ""
+    read -rp "  Username [$TTYD_USER]: " input_user
+    TTYD_USER="${input_user:-$TTYD_USER:-hermes}"
+
+    # Prompt for password with hidden input + confirmation
+    while true; do
+        read -rsp "  Password: " pass1; echo
+        read -rsp "  Confirm:  " pass2; echo
+        if [ -z "$pass1" ]; then
+            echo "  Password cannot be empty."
+        elif [ "$pass1" != "$pass2" ]; then
+            echo "  Passwords don't match, try again."
+        else
+            TTYD_PASSWORD="$pass1"
+            break
+        fi
+    done
+
+    # Save to .env (git-ignored)
+    cat > "$ENV_FILE" <<EOF
+PORT=$PORT
+TTYD_USER=$TTYD_USER
+TTYD_PASSWORD=$TTYD_PASSWORD
+EOF
+    chmod 600 "$ENV_FILE"
+    echo ""
+    echo "  Saved to $ENV_FILE (chmod 600)"
+fi
 
 # ── Commands ──────────────────────────────────────────────────────────
 
@@ -29,18 +72,17 @@ do_build() {
 }
 
 do_run() {
-    # Create data dirs if they don't exist
     mkdir -p "$DATA_DIR/workspace"
     mkdir -p "$DATA_DIR/hermes-config"
 
-    # Stop existing container if running
     docker stop "$CONTAINER" 2>/dev/null || true
     docker rm "$CONTAINER" 2>/dev/null || true
 
-    echo "Starting container..."
-    echo "  Data:  $DATA_DIR"
-    echo "  Login: $TTYD_USER / $TTYD_PASSWORD"
-    echo "  URL:   http://localhost:$PORT"
+    echo ""
+    echo "  Starting container..."
+    echo "  Data:    $DATA_DIR"
+    echo "  Login:   $TTYD_USER"
+    echo "  URL:     http://localhost:$PORT"
     echo ""
 
     docker run -d \
@@ -61,17 +103,12 @@ do_run() {
         -v "$DATA_DIR/hermes-config:/home/hermes/.hermes" \
         "$IMAGE"
 
-    echo ""
     echo "Done! Open http://<your-ip>:$PORT in a browser."
     echo "Run 'hermes setup' inside the terminal to configure your AI provider."
 }
 
 case "${1:-run}" in
-    run)
-        do_build
-        do_run
-        ;;
-    update)
+    run|update)
         do_build
         do_run
         ;;

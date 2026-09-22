@@ -53,6 +53,9 @@ RUN chown hermes:hermes /opt \
 # ── OpenCode CLI ─────────────────────────────────────────────────────
 RUN npm i -g opencode-ai@latest
 
+# ── Antigravity CLI ─────────────────────────────────────────────────
+RUN curl -fsSL https://antigravity.google/cli/install.sh | bash
+
 # ── GitHub CLI ───────────────────────────────────────────────────────
 RUN curl -fsSL https://cli.github.com/packages/githubcli-archive-keyring.gpg \
     | dd of=/usr/share/keyrings/githubcli-archive-keyring.gpg \
