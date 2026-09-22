@@ -5,6 +5,7 @@
 # Usage:
 #   ./run.sh              Build + run (prompts for password on first run)
 #   ./run.sh update       Rebuild + restart (preserves ./data/ and login)
+#   ./run.sh passwd       Change web terminal password
 #   ./run.sh stop         Stop the container
 #   ./run.sh logs         Follow container logs
 #
@@ -20,26 +21,27 @@ ENV_FILE="$SCRIPT_DIR/.env"
 IMAGE="hermes-homelab"
 CONTAINER="hermes-homelab"
 
-# ── Load or prompt for settings ──────────────────────────────────────
+# ── Load saved settings ──────────────────────────────────────────────
 
 if [ -f "$ENV_FILE" ]; then
     source "$ENV_FILE"
 fi
 
 PORT="${PORT:-7681}"
-TTYD_USER="${TTYD_USER:-}"
+TTYD_USER="${TTYD_USER:-hermes}"
+TTYD_PASSWORD="${TTYD_PASSWORD:-}"
 
-# First run: ask for credentials
-if [ -z "$TTYD_USER" ] || [ -z "$TTYD_PASSWORD" ]; then
-    echo ""
-    echo "  ┌──────────────────────────────────────────┐"
-    echo "  │  hermes-homelab — first-time setup        │"
-    echo "  └──────────────────────────────────────────┘"
+# ── Prompt for password if missing or default ─────────────────────────
+
+need_password() {
+    [ -z "$TTYD_PASSWORD" ] || [ "$TTYD_PASSWORD" = "changeme" ] || [ "$TTYD_PASSWORD" = "yourpassword" ]
+}
+
+prompt_password() {
     echo ""
     read -rp "  Username [$TTYD_USER]: " input_user
-    TTYD_USER="${input_user:-$TTYD_USER:-hermes}"
+    TTYD_USER="${input_user:-$TTYD_USER}"
 
-    # Prompt for password with hidden input + confirmation
     while true; do
         read -rsp "  Password: " pass1; echo
         read -rsp "  Confirm:  " pass2; echo
@@ -53,16 +55,14 @@ if [ -z "$TTYD_USER" ] || [ -z "$TTYD_PASSWORD" ]; then
         fi
     done
 
-    # Save to .env (git-ignored)
     cat > "$ENV_FILE" <<EOF
 PORT=$PORT
 TTYD_USER=$TTYD_USER
 TTYD_PASSWORD=$TTYD_PASSWORD
 EOF
     chmod 600 "$ENV_FILE"
-    echo ""
     echo "  Saved to $ENV_FILE (chmod 600)"
-fi
+}
 
 # ── Commands ──────────────────────────────────────────────────────────
 
@@ -109,8 +109,20 @@ do_run() {
 
 case "${1:-run}" in
     run|update)
+        if need_password; then
+            echo ""
+            echo "  ┌──────────────────────────────────────────┐"
+            echo "  │  hermes-homelab — terminal login setup    │"
+            echo "  └──────────────────────────────────────────┘"
+            prompt_password
+        fi
         do_build
         do_run
+        ;;
+    passwd)
+        prompt_password
+        echo ""
+        echo "  Restart to apply: ./run.sh stop && ./run.sh run"
         ;;
     stop)
         docker stop "$CONTAINER" 2>/dev/null || true
@@ -121,7 +133,7 @@ case "${1:-run}" in
         docker logs -f "$CONTAINER"
         ;;
     *)
-        echo "Usage: $0 [run|update|stop|logs]"
+        echo "Usage: $0 [run|update|passwd|stop|logs]"
         exit 1
         ;;
 esac

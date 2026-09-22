@@ -50,8 +50,11 @@ RUN chown hermes:hermes /opt \
     && chmod +x /usr/local/bin/hermes \
     && hermes --version
 
-# ── OpenCode CLI ─────────────────────────────────────────────────────
-RUN npm i -g opencode-ai@latest
+# ── AI Coding CLIs ──────────────────────────────────────────────────
+RUN npm i -g opencode-ai@latest \
+    && npm i -g @openai/codex@latest \
+    && npm i -g @anthropic-ai/claude-code@latest \
+    && npm i -g @mimo-ai/cli@latest
 
 # ── Antigravity CLI ─────────────────────────────────────────────────
 RUN gosu hermes bash -c 'curl -fsSL https://antigravity.google/cli/install.sh | bash' \
@@ -59,13 +62,15 @@ RUN gosu hermes bash -c 'curl -fsSL https://antigravity.google/cli/install.sh | 
          [ -f "$f" ] && cp "$f" "/usr/local/bin/$(basename "$f")" 2>/dev/null; \
        done; true
 
-# ── GitHub CLI ───────────────────────────────────────────────────────
-RUN curl -fsSL https://cli.github.com/packages/githubcli-archive-keyring.gpg \
-    | dd of=/usr/share/keyrings/githubcli-archive-keyring.gpg \
-    && echo "deb [arch=$(dpkg --print-architecture) signed-by=/usr/share/keyrings/githubcli-archive-keyring.gpg] https://cli.github.com/packages stable main" \
-    > /etc/apt/sources.list.d/github-cli.list \
-    && apt-get update && apt-get install -y --no-install-recommends gh \
-    && apt-get clean && rm -rf /var/lib/apt/lists/*
+# ── GitHub CLI (standalone binary, no apt needed) ─────────────────────
+RUN GH_VERSION="2.101.0" \
+    && ARCH=$(dpkg --print-architecture) \
+    && curl -fsSL -o /tmp/gh.tar.gz \
+      "https://github.com/cli/cli/releases/download/v${GH_VERSION}/gh_${GH_VERSION}_linux_${ARCH}.tar.gz" \
+    && tar xzf /tmp/gh.tar.gz -C /tmp \
+    && mv /tmp/gh_${GH_VERSION}_linux_${ARCH}/bin/gh /usr/local/bin/gh \
+    && rm -rf /tmp/gh* \
+    && gh --version
 
 # ── Security hardening ───────────────────────────────────────────────
 RUN find / -perm /6000 -type f -exec chmod a-s {} + 2>/dev/null || true
