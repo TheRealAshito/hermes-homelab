@@ -54,7 +54,10 @@ RUN chown hermes:hermes /opt \
 RUN npm i -g opencode-ai@latest
 
 # ── Antigravity CLI ─────────────────────────────────────────────────
-RUN curl -fsSL https://antigravity.google/cli/install.sh | bash
+RUN gosu hermes bash -c 'curl -fsSL https://antigravity.google/cli/install.sh | bash' \
+    && for f in /home/hermes/.local/bin/*; do \
+         [ -f "$f" ] && cp "$f" "/usr/local/bin/$(basename "$f")" 2>/dev/null; \
+       done; true
 
 # ── GitHub CLI ───────────────────────────────────────────────────────
 RUN curl -fsSL https://cli.github.com/packages/githubcli-archive-keyring.gpg \
