@@ -225,3 +225,6 @@ Expected runtime memory: **300–500 MB**
 
 **A tool isn't found inside the terminal**
 → Check `./run.sh shell` and run `which <tool>`. All tools should be in `/usr/local/bin/` or `/usr/local/bin/`.
+
+**opencode fails with "Failed to initialize OpenTUI render library ... failed to map segment from shared object"**
+→ Cause: native libraries extracted to `/tmp` can't be loaded because Docker mounts the `/tmp` tmpfs with `noexec`. Fixed by pointing `TMPDIR` to `~/.hermes/cache/tmp` (an exec-capable volume). Update the image (`./run.sh update` or `make update`) and verify with `echo $TMPDIR`. Stale extracted libs are cleaned automatically at startup.

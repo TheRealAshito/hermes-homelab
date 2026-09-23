@@ -78,6 +78,13 @@ RUN find / -perm /6000 -type f -exec chmod a-s {} + 2>/dev/null || true
 # PATH for hermes + opencode (ENV so it works in every shell, not just .bashrc)
 ENV PATH="/home/hermes/.local/bin:/home/hermes/.opencode/bin:/usr/local/bin:${PATH}"
 
+# TMPDIR must NOT be /tmp: Docker mounts it with the noexec option (default for
+# tmpfs entries), so native libraries extracted there at runtime (e.g. opencode's
+# OpenTUI renderer) cannot be dlopen()'d — "failed to map segment from shared
+# object". The .hermes volume is exec-capable. entrypoint.sh creates and cleans
+# this dir at startup.
+ENV TMPDIR=/home/hermes/.hermes/cache/tmp
+
 # ── Entrypoint scripts ───────────────────────────────────────────────
 COPY entrypoint.sh /entrypoint.sh
 RUN chmod +x /entrypoint.sh

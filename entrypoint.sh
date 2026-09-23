@@ -56,6 +56,23 @@ echo "[entrypoint] Hermes Homelab starting..."
 } || true
 
 # ══════════════════════════════════════════════════════════════════════
+# TEMP DIR FOR EXTRACTED NATIVE LIBS
+# /tmp is mounted noexec (Docker tmpfs default), so tools that extract +
+# dlopen() a native lib at runtime (opencode's OpenTUI renderer) must write
+# it elsewhere — TMPDIR points at this exec-capable dir (see Dockerfile).
+# Clean stale extracted libs from previous runs (~14 MB each). The glob only
+# matches the "<16 hex>-<8 chars>.so" pattern those extractors use.
+# ══════════════════════════════════════════════════════════════════════
+
+{
+  TMPDIR="${TMPDIR:-/home/hermes/.hermes/cache/tmp}"
+  mkdir -p "$TMPDIR"
+  chown hermes:hermes "$TMPDIR"
+  rm -f "$TMPDIR"/.????????????????-????????.so
+  rm -f /tmp/.????????????????-????????.so
+} 2>/dev/null || true
+
+# ══════════════════════════════════════════════════════════════════════
 # START TTYD
 # ttyd syntax: ttyd [options] <command>
 # --credential must come BEFORE the shell name.
