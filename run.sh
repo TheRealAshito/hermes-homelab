@@ -76,7 +76,7 @@ EOF
 
 do_build() {
     echo "Building image..."
-    docker build -t "$IMAGE" "$SCRIPT_DIR"
+    docker build "$@" -t "$IMAGE" "$SCRIPT_DIR"
 }
 
 do_run() {
@@ -130,7 +130,13 @@ case "${1:-run}" in
             echo "  └──────────────────────────────────────────┘"
             prompt_password
         fi
-        do_build
+        # update = --no-cache (like make update) so hermes + CLI versions
+        # actually refresh; plain run keeps the build cache for speed.
+        if [ "${1:-run}" = "update" ]; then
+            do_build --no-cache
+        else
+            do_build
+        fi
         do_run
         ;;
     passwd)
@@ -139,7 +145,9 @@ case "${1:-run}" in
         echo "  Restart to apply: ./run.sh stop && ./run.sh run"
         ;;
     shell)
-        docker exec -it "$CONTAINER" bash
+        # hermes user, not root — root shells leave root-owned files in
+        # /opt/hermes-agent that break `hermes update`.
+        docker exec -it -u hermes "$CONTAINER" bash
         ;;
     status)
         docker ps -a --filter "name=$CONTAINER" --format "table {{.Names}}\t{{.Status}}\t{{.Ports}}"

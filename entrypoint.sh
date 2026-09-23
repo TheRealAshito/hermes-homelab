@@ -53,6 +53,10 @@ echo "[entrypoint] Hermes Homelab starting..."
   chown -R hermes:hermes /home/hermes/.local 2>/dev/null
   chown -R hermes:hermes /home/hermes/.hermes 2>/dev/null
   chown hermes:hermes /home/hermes 2>/dev/null
+  # /opt/hermes-agent: running hermes/pip as root leaves root-owned
+  # __pycache__ in the venv, which trips `hermes update`'s safety check
+  # ("this install's venv contains files owned by another user").
+  chown -R hermes:hermes /opt/hermes-agent 2>/dev/null
 } || true
 
 # ══════════════════════════════════════════════════════════════════════

@@ -48,7 +48,8 @@ RUN chown hermes:hermes /opt \
     --dir /opt/hermes-agent --hermes-home /home/hermes/.hermes' \
     && cp /home/hermes/.local/bin/hermes /usr/local/bin/hermes \
     && chmod +x /usr/local/bin/hermes \
-    && hermes --version
+    && gosu hermes hermes --version \
+    && chown -R hermes:hermes /opt/hermes-agent
 
 # ── AI Coding CLIs ──────────────────────────────────────────────────
 RUN npm i -g opencode-ai@latest \

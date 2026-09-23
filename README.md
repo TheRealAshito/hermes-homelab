@@ -239,3 +239,6 @@ Expected runtime memory: **300–500 MB**
 
 **opencode fails with "Failed to initialize OpenTUI render library ... failed to map segment from shared object"**
 → Cause: native libraries extracted to `/tmp` can't be loaded because Docker mounts the `/tmp` tmpfs with `noexec`. Fixed by pointing `TMPDIR` to `~/.hermes/cache/tmp` (an exec-capable volume). Update the image (`./run.sh update` or `make update`) and verify with `echo $TMPDIR`. Stale extracted libs are cleaned automatically at startup.
+
+**`hermes update` fails with "this install's venv contains files owned by another user"**
+→ Root cause: the image build ran `hermes --version` as root, writing root-owned `__pycache__` into the venv at `/opt/hermes-agent`; root shells recreate the same drift at runtime. Fixed in the image (the version check now runs as `hermes` and the build chowns `/opt/hermes-agent`), the entrypoint re-applies that ownership on every start, and `./run.sh shell` now opens as the `hermes` user. For an already-built container: `docker exec -u root hermes-homelab chown -R hermes:hermes /opt/hermes-agent`, then `hermes update` again — or skip `hermes update` entirely: `./updater.sh` (and `make update`) rebuild with `--no-cache`, which installs the latest Hermes Agent anyway.
