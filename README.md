@@ -6,7 +6,8 @@ Run [Hermes Agent](https://github.com/nousresearch/hermes-agent) + AI coding CLI
 
 - Runs **Hermes Agent** + **6 AI coding CLIs** in an isolated Docker container
 - Web-based terminal on port 7681 (works on desktop and mobile)
-- **Network isolation**: blocks all LAN access (192.168.x, 10.x, 172.16-31.x), internet-only for cloud API calls
+- **Network isolation**: blocks all LAN access (192.168.x, 10.x, 172.16-31.x)
+- **Egress allowlist**: all internet access goes through a default-deny proxy — only domains you allow (AI APIs, GitHub, package registries) are reachable
 - Persistent storage for chats, memory, skills, and workspace files
 - Backup/restore for all persistent data
 
@@ -93,6 +94,31 @@ gh auth login          # follow the prompts
 
 This gives Hermes access to GitHub repos, issues, PRs, etc. via MCP tools.
 
+## Network egress allowlist
+
+All web egress from the agent goes through `egress-proxy/` — a default-deny proxy (an ALLOWLIST, not a blocklist). The firewall inside the container blocks direct egress and `HTTP(S)_PROXY` points every tool at the proxy.
+
+- The allowlist lives at `./data/egress-allowlist.conf` (seeded from `egress-proxy/allowlist.default` on first run).
+- `example.com` allows that domain AND its subdomains. `#` starts a comment. Edits apply live — no restart needed.
+- An EMPTY file denies everything (intentional lockdown). Deleting the file falls back to the baked-in defaults.
+- Ships pre-seeded with: AI provider APIs, GitHub, pypi/npm/crates/go registries, distro mirrors, and huggingface.
+- When a tool fails to reach a host: `docker logs hermes-egress-proxy` shows `DENY <host>` lines — add the domain to the file and retry.
+- Test the proxy anywhere: `python3 egress-proxy/test_proxy.py` (pure stdlib).
+- Escape hatch: `EGRESS_MODE=legacy` turns the firewall enforcement off (tools still use the proxy via env).
+
+## Sandboxing with gVisor (optional)
+
+For VM-grade escape protection without the RAM cost of a VM, install [gVisor](https://gvisor.dev/docs/user_guide/install/) on the host:
+
+```bash
+wget https://storage.googleapis.com/gvisor/releases/release/latest/amd64/runsc
+sudo install -m 755 runsc /usr/local/bin/runsc
+echo '{"runtimes":{"runsc":{"path":"/usr/local/bin/runsc"}}}' | sudo tee /etc/docker/daemon.json
+sudo systemctl restart docker
+```
+
+Then run `./updater.sh` (it auto-detects runsc) or set `HERMES_RUNTIME=runsc` in `.env`. Under gVisor the container's syscalls are emulated by a userspace kernel, so a kernel exploit can no longer reach the host filesystem — the same protection a VM gives, at ~50-150MB extra RAM. When you later move to a full VM, this whole stack runs unchanged inside the guest.
+
 ## Security
 
 See [SECURITY-AUDIT.md](SECURITY-AUDIT.md) for the full threat model.
@@ -112,6 +138,9 @@ See [SECURITY-AUDIT.md](SECURITY-AUDIT.md) for the full threat model.
 | No Docker socket | Docker socket is NOT mounted — no container escape |
 | Resource limits | nproc=512 (fork bomb protection), nofile=65536 |
 | tmpfs | /tmp and /run are tmpfs (not persisted, limited size) |
+| Egress allowlist | All web egress via a default-deny proxy (egress-proxy/); firewall blocks direct egress |
+| Resource caps | mem_limit + cpus on the container (protects the host from runaway workloads) |
+| Optional gVisor | `HERMES_RUNTIME=runsc` runs the container under a userspace kernel (VM-grade escape protection) |
 | TTYD basic auth | Web terminal requires username/password |
 | Health check | Docker HEALTHCHECK verifies ttyd is responding |
 
@@ -242,3 +271,6 @@ Expected runtime memory: **300–500 MB**
 
 **`hermes update` fails with "this install's venv contains files owned by another user"**
 → Root cause: the image build ran `hermes --version` as root, writing root-owned `__pycache__` into the venv at `/opt/hermes-agent`; root shells recreate the same drift at runtime. Fixed in the image (the version check now runs as `hermes` and the build chowns `/opt/hermes-agent`), the entrypoint re-applies that ownership on every start, and `./run.sh shell` now opens as the `hermes` user. For an already-built container: `docker exec -u root hermes-homelab chown -R hermes:hermes /opt/hermes-agent`, then `hermes update` again — or skip `hermes update` entirely: `./updater.sh` (and `make update`) rebuild with `--no-cache`, which installs the latest Hermes Agent anyway.
+
+**A tool can't reach the internet ("blocked by egress allowlist")**
+→ The egress proxy denied the host — working as designed. `docker logs hermes-egress-proxy` shows `DENY <host>` lines. Add the domain to `./data/egress-allowlist.conf` (applies live) and retry. Direct egress is intentionally blocked; everything goes through the proxy.

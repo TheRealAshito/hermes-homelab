@@ -3,6 +3,9 @@ services:
     build: .
     container_name: hermes-homelab
     restart: unless-stopped
+    # Opt-in hardening: set HERMES_RUNTIME=runsc after installing gVisor
+    # (see README "Sandboxing with gVisor"). Default runc = zero-step compat.
+    runtime: ${HERMES_RUNTIME:-runc}
     ports:
       - "7681:7681"
     volumes:
@@ -11,6 +14,14 @@ services:
     environment:
       - TTYD_USER=${TTYD_USER:-hermes}
       - TTYD_PASSWORD=${TTYD_PASSWORD:-changeme}
+      # All web egress goes through the allowlist proxy (enforced by the
+      # entrypoint firewall rules; see egress-proxy/).
+      - HTTP_PROXY=http://hermes-egress-proxy:8888
+      - HTTPS_PROXY=http://hermes-egress-proxy:8888
+      - http_proxy=http://hermes-egress-proxy:8888
+      - https_proxy=http://hermes-egress-proxy:8888
+      - NO_PROXY=localhost,127.0.0.1
+      - no_proxy=localhost,127.0.0.1
     cap_drop:
       - ALL
     cap_add:
@@ -32,8 +43,28 @@ services:
       nofile:
         soft: 65536
         hard: 65536
+    # Protect the host (e.g. a media server) from runaway agent workloads.
+    mem_limit: ${HERMES_MEM_LIMIT:-2g}
+    cpus: ${HERMES_CPUS:-2.0}
+    depends_on:
+      - egress-proxy
     networks:
-      hermes-net:
+      - hermes-net
+
+  egress-proxy:
+    build: ./egress-proxy
+    container_name: hermes-egress-proxy
+    restart: unless-stopped
+    volumes:
+      # Seeded from egress-proxy/allowlist.default on first run
+      # (egress-proxy/seed.sh). Empty file = deny ALL. Edit live.
+      - ${DATA_DIR:-./data}/egress-allowlist.conf:/etc/egress/allowlist
+    dns:
+      - 1.1.1.1
+      - 8.8.8.8
+    mem_limit: 128m
+    networks:
+      - hermes-net
 
 networks:
   hermes-net:

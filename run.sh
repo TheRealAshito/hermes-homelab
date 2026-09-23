@@ -22,6 +22,9 @@ DATA_DIR="${DATA_DIR:-$SCRIPT_DIR/data}"
 ENV_FILE="$SCRIPT_DIR/.env"
 IMAGE="hermes-homelab"
 CONTAINER="hermes-homelab"
+PROXY_IMAGE="hermes-egress-proxy"
+PROXY_CONTAINER="hermes-egress-proxy"
+NETWORK="hermes-homelab-net"
 
 # ── Load saved settings (safe parse, no source) ──────────────────────
 
@@ -77,14 +80,34 @@ EOF
 do_build() {
     echo "Building image..."
     docker build "$@" -t "$IMAGE" "$SCRIPT_DIR"
+    echo "Building egress proxy image..."
+    docker build "$@" -t "$PROXY_IMAGE" "$SCRIPT_DIR/egress-proxy"
 }
 
 do_run() {
     mkdir -p "$DATA_DIR/workspace"
     mkdir -p "$DATA_DIR/hermes-config"
 
+    bash "$SCRIPT_DIR/egress-proxy/seed.sh"
+
     docker stop "$CONTAINER" 2>/dev/null || true
     docker rm "$CONTAINER" 2>/dev/null || true
+
+    # User-defined network so container names resolve (the app finds the
+    # egress proxy by name). Idempotent.
+    docker network create "$NETWORK" >/dev/null 2>&1 || true
+
+    # Egress allowlist proxy — the app's only exit to the internet.
+    docker rm -f "$PROXY_CONTAINER" 2>/dev/null || true
+    docker run -d \
+        --name "$PROXY_CONTAINER" \
+        --restart unless-stopped \
+        --memory 128m \
+        --dns 1.1.1.1 \
+        --dns 8.8.8.8 \
+        --network "$NETWORK" \
+        -v "$DATA_DIR/egress-allowlist.conf:/etc/egress/allowlist" \
+        "$PROXY_IMAGE"
 
     echo ""
     echo "  Starting container..."
@@ -96,6 +119,9 @@ do_run() {
     docker run -d \
         --name "$CONTAINER" \
         --restart unless-stopped \
+        --runtime "${HERMES_RUNTIME:-runc}" \
+        --memory "${HERMES_MEM_LIMIT:-2g}" \
+        --cpus "${HERMES_CPUS:-2.0}" \
         --cap-drop ALL \
         --cap-add NET_ADMIN \
         --cap-add SETUID \
@@ -109,9 +135,16 @@ do_run() {
         --ulimit nofile=65536 \
         --dns 1.1.1.1 \
         --dns 8.8.8.8 \
+        --network "$NETWORK" \
         -p "$PORT:7681" \
         -e TTYD_USER="$TTYD_USER" \
         -e TTYD_PASSWORD="$TTYD_PASSWORD" \
+        -e HTTP_PROXY="http://$PROXY_CONTAINER:8888" \
+        -e HTTPS_PROXY="http://$PROXY_CONTAINER:8888" \
+        -e http_proxy="http://$PROXY_CONTAINER:8888" \
+        -e https_proxy="http://$PROXY_CONTAINER:8888" \
+        -e NO_PROXY="localhost,127.0.0.1" \
+        -e no_proxy="localhost,127.0.0.1" \
         -v "$DATA_DIR/workspace:/workspace" \
         -v "$DATA_DIR/hermes-config:/home/hermes/.hermes" \
         "$IMAGE"
@@ -157,6 +190,7 @@ case "${1:-run}" in
     stop)
         docker stop "$CONTAINER" 2>/dev/null || true
         docker rm "$CONTAINER" 2>/dev/null || true
+        docker rm -f "$PROXY_CONTAINER" 2>/dev/null || true
         echo "Stopped."
         ;;
     logs)

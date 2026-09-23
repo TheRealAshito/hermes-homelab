@@ -20,13 +20,35 @@ echo "[entrypoint] Hermes Homelab starting..."
     iptables -A INPUT  -i lo -j ACCEPT
     iptables -A OUTPUT -o lo -j ACCEPT
     iptables -A OUTPUT -m state --state ESTABLISHED,RELATED -j ACCEPT
+
+    # Egress policy: web egress goes ONLY through the allowlist proxy
+    # (see egress-proxy/). Direct outbound is limited to DNS.
+    #   EGRESS_MODE=proxy  (default) — only the proxy is reachable
+    #   EGRESS_MODE=legacy           — direct 80/443, no allowlist
+    # Fail-safe: if the proxy cannot be resolved, web egress stays BLOCKED.
+    EGRESS_MODE="${EGRESS_MODE:-proxy}"
+    PROXY_HOST="${EGRESS_PROXY_HOST:-hermes-egress-proxy}"
+    PROXY_PORT="${EGRESS_PROXY_PORT:-8888}"
+    PROXY_IP=$(getent hosts "$PROXY_HOST" 2>/dev/null | awk 'NR==1{print $1}')
+
+    if [ "$EGRESS_MODE" = "legacy" ]; then
+      iptables -A OUTPUT -p tcp --dport 443 -j ACCEPT
+      iptables -A OUTPUT -p tcp --dport 80  -j ACCEPT
+      echo "[entrypoint] Egress: LEGACY mode — direct web allowed (no allowlist)."
+    elif [ -n "$PROXY_IP" ]; then
+      # must precede the RFC1918 DROP loop below (the proxy lives on a
+      # private docker subnet)
+      iptables -A OUTPUT -d "$PROXY_IP" -p tcp --dport "$PROXY_PORT" -j ACCEPT
+      echo "[entrypoint] Egress: allowlist proxy $PROXY_IP:$PROXY_PORT (default deny)."
+    else
+      echo "[entrypoint] WARNING: egress proxy '$PROXY_HOST' unresolved — web egress BLOCKED (fail-safe)."
+    fi
+
     for NET in 10.0.0.0/8 172.16.0.0/12 192.168.0.0/16 169.254.0.0/16 224.0.0.0/4; do
       iptables -A OUTPUT -d "$NET" -j DROP
     done
     iptables -A OUTPUT -p udp --dport 53 -j ACCEPT
     iptables -A OUTPUT -p tcp --dport 53 -j ACCEPT
-    iptables -A OUTPUT -p tcp --dport 443 -j ACCEPT
-    iptables -A OUTPUT -p tcp --dport 80  -j ACCEPT
     echo "[entrypoint] Network isolation active (inbound OK, outbound LAN blocked)."
   else
     echo "[entrypoint] WARNING: iptables not available — network isolation DISABLED!"

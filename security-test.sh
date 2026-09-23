@@ -20,7 +20,7 @@ echo "════════════════════════�
 echo ""
 
 # ── 1. USER ISOLATION ────────────────────────────────────────────────
-echo "[1/7] User isolation"
+echo "[1/8] User isolation"
 
 if [ "$(id -u)" -ne 0 ]; then
   pass "Running as non-root (uid=$(id -u))"
@@ -36,7 +36,7 @@ fi
 
 # ── 2. FILESYSTEM ISOLATION ──────────────────────────────────────────
 echo ""
-echo "[2/7] Filesystem isolation"
+echo "[2/8] Filesystem isolation"
 
 # Check /workspace is writable
 if touch /workspace/.write-test 2>/dev/null; then
@@ -71,7 +71,7 @@ fi
 
 # ── 3. NETWORK ISOLATION — IPv4 ──────────────────────────────────────
 echo ""
-echo "[3/7] Network isolation (IPv4 LAN blocking)"
+echo "[3/8] Network isolation (IPv4 LAN blocking)"
 
 # Test RFC1918 ranges — these should all FAIL (timeout/refused)
 LAN_TARGETS=("192.168.1.1" "10.0.0.1" "172.16.0.1" "192.168.0.1")
@@ -83,16 +83,21 @@ for target in "${LAN_TARGETS[@]}"; do
   fi
 done
 
-# Test that internet IS reachable
-if timeout 10 bash -c "echo > /dev/tcp/1.1.1.1/443" 2>/dev/null; then
-  pass "Internet (1.1.1.1:443) is reachable"
+# Direct internet egress must be BLOCKED — web access goes through the
+# allowlist proxy only (see section 8). EGRESS_MODE=legacy opts out.
+if timeout 5 bash -c "echo > /dev/tcp/1.1.1.1/443" 2>/dev/null; then
+  if [ "${EGRESS_MODE:-proxy}" = "legacy" ]; then
+    warn "Direct egress open (EGRESS_MODE=legacy — allowlist not enforced)"
+  else
+    fail "Direct egress to 1.1.1.1:443 works — proxy-only policy broken!"
+  fi
 else
-  warn "Internet (1.1.1.1:443) not reachable — check host networking"
+  pass "Direct egress blocked (proxy-only policy)"
 fi
 
 # ── 4. NETWORK ISOLATION — IPv6 ──────────────────────────────────────
 echo ""
-echo "[4/7] Network isolation (IPv6)"
+echo "[4/8] Network isolation (IPv6)"
 
 if [ -f /proc/sys/net/ipv6/conf/all/disable_ipv6 ]; then
   val=$(cat /proc/sys/net/ipv6/conf/all/disable_ipv6)
@@ -116,7 +121,7 @@ fi
 
 # ── 5. DNS ISOLATION ─────────────────────────────────────────────────
 echo ""
-echo "[5/7] DNS isolation"
+echo "[5/8] DNS isolation"
 
 # Check resolv.conf uses external DNS
 if grep -qE "1\.1\.1\.1|8\.8\.8\.8" /etc/resolv.conf; then
@@ -135,7 +140,7 @@ fi
 
 # ── 6. PRIVILEGE ESCALATION ──────────────────────────────────────────
 echo ""
-echo "[6/7] Privilege escalation checks"
+echo "[6/8] Privilege escalation checks"
 
 # Check no-new-privileges
 if grep -q "NoNewPrivileges" /proc/1/status 2>/dev/null; then
@@ -159,7 +164,7 @@ fi
 
 # ── 7. RESOURCE LIMITS ───────────────────────────────────────────────
 echo ""
-echo "[7/7] Resource limits"
+echo "[7/8] Resource limits"
 
 # Check nproc limit
 NPROC=$(ulimit -u 2>/dev/null || echo "unknown")
@@ -175,6 +180,54 @@ if [ "$NOFILE" -ge 1024 ] 2>/dev/null; then
   pass "File descriptor limit adequate (nofile=$NOFILE)"
 else
   warn "File descriptor limit low (nofile=$NOFILE)"
+fi
+
+# Check memory cap (protects the host from runaway workloads)
+if [ -f /sys/fs/cgroup/memory.max ]; then
+  MEMLIMIT=$(cat /sys/fs/cgroup/memory.max)
+else
+  MEMLIMIT=$(cat /sys/fs/cgroup/memory/memory.limit_in_bytes 2>/dev/null || echo "unknown")
+fi
+if [ "$MEMLIMIT" = "max" ] || [ "$MEMLIMIT" = "unknown" ] || [ "${MEMLIMIT:-0}" -ge 9223372036854775807 ] 2>/dev/null; then
+  warn "No memory limit set (set HERMES_MEM_LIMIT to cap the container)"
+else
+  pass "Memory limit enforced (${MEMLIMIT} bytes)"
+fi
+
+# ── 8. EGRESS ALLOWLIST PROXY ────────────────────────────────────────
+echo ""
+echo "[8/8] Egress allowlist (proxy)"
+
+PROXY_URL="${HTTPS_PROXY:-${https_proxy:-}}"
+if [ -n "$PROXY_URL" ]; then
+  pass "Proxy env set ($PROXY_URL)"
+else
+  fail "No HTTP(S)_PROXY env — tools would bypass the allowlist"
+fi
+
+# Allowlisted host must be reachable through the proxy
+GITHUB_CODE=$(curl -s -o /dev/null -w '%{http_code}' --max-time 10 -x "${PROXY_URL}" https://api.github.com/ 2>/dev/null || echo "000")
+if [ "$GITHUB_CODE" = "403" ]; then
+  fail "Allowlisted host (api.github.com) denied — check ./data/egress-allowlist.conf"
+elif [ "$GITHUB_CODE" = "000" ]; then
+  warn "Could not reach api.github.com via proxy (is hermes-egress-proxy running? is the host online?)"
+else
+  pass "Allowlisted host reachable via proxy (HTTP $GITHUB_CODE)"
+fi
+
+# Non-allowlisted host must be denied by the proxy
+DENY_BODY=$(curl -s --max-time 10 -x "${PROXY_URL}" https://example.com/ 2>/dev/null || true)
+if echo "$DENY_BODY" | grep -q "blocked by egress allowlist"; then
+  pass "Non-allowlisted host denied by proxy (403 marker)"
+else
+  fail "Non-allowlisted host NOT denied — allowlist broken!"
+fi
+
+# Direct HTTPS (bypassing the proxy) must be blocked by the firewall
+if curl -s --max-time 5 https://example.com/ -o /dev/null 2>/dev/null; then
+  fail "Direct HTTPS works — firewall enforcement broken"
+else
+  pass "Direct HTTPS (bypassing proxy) is blocked"
 fi
 
 # ── SUMMARY ──────────────────────────────────────────────────────────

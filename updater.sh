@@ -45,6 +45,12 @@ echo "[updater] 3/6 git pull..."
 git pull
 
 echo "[updater] 4/6 Rebuild + recreate..."
+bash "$SCRIPT_DIR/egress-proxy/seed.sh"
+# Auto-use gVisor when installed (see README "Sandboxing with gVisor").
+if [ -z "${HERMES_RUNTIME:-}" ] && docker info 2>/dev/null | grep -q runsc; then
+    export HERMES_RUNTIME=runsc
+    echo "          gVisor (runsc) detected — HERMES_RUNTIME=runsc"
+fi
 COMPOSE_PROJECT=$(docker inspect "$CONTAINER" \
     --format '{{index .Config.Labels "com.docker.compose.project"}}' 2>/dev/null || true)
 if [ -n "$COMPOSE_PROJECT" ] && [ -f "$SCRIPT_DIR/docker-compose.yml" ]; then

@@ -1,0 +1,58 @@
+# hermes-homelab egress allowlist — default DENY, this file is what's allowed.
+# One domain per line. 'example.com' allows example.com AND *.example.com.
+# Lines starting with '#' are comments. Edit live — the proxy reloads on change.
+#
+# Where the AI creates things / downloads packages from:
+
+# ── AI provider APIs (add YOUR provider's API host if missing) ─────────
+api.openai.com
+api.anthropic.com
+generativelanguage.googleapis.com
+api.deepseek.com
+api.mistral.ai
+api.groq.com
+openrouter.ai
+api.together.xyz
+api.xiaomi.com
+api.mimo.ai
+
+# ── Hermes Agent (installer / updates) ────────────────────────────────
+hermes-agent.nousresearch.com
+
+# ── GitHub (git clone, gh, release assets) ────────────────────────────
+github.com
+githubusercontent.com
+githubassets.com
+ghcr.io
+
+# ── Python packages ───────────────────────────────────────────────────
+pypi.org
+pythonhosted.org
+files.pythonhosted.org
+
+# ── Node.js packages ──────────────────────────────────────────────────
+registry.npmjs.org
+nodejs.org
+deb.nodesource.com
+
+# ── Debian / Ubuntu packages ──────────────────────────────────────────
+deb.debian.org
+security.debian.org
+deb.ubuntu.com
+archive.ubuntu.com
+security.ubuntu.com
+
+# ── Rust / Go modules ─────────────────────────────────────────────────
+crates.io
+static.crates.io
+index.crates.io
+proxy.golang.org
+sum.golang.org
+storage.googleapis.com
+
+# ── Model / dataset hubs ──────────────────────────────────────────────
+huggingface.co
+hf.co
+
+# ── Escape hatch (removes the guard entirely — leave commented out) ───
+# *
