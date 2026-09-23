@@ -41,6 +41,7 @@ First run asks for a username and password (saved to `.env`). Then open `http://
 ### Other commands
 
 ```bash
+./updater.sh          # Safe update: git pull + rebuild + preserve ALL configs
 ./run.sh update       # Rebuild + restart (preserves data)
 ./run.sh passwd       # Change web terminal password
 ./run.sh shell        # Open a shell in the running container
@@ -168,10 +169,20 @@ make clean              ⚠ Delete ALL volumes (destroys hermes data)
 ## Updating
 
 ```bash
-# Pull latest changes and rebuild (preserves all data)
+# Safe update — preserves everything, including auth + CLI configs:
+./updater.sh
+```
+
+`./updater.sh` backs up `./data/`, snapshots the container's home layer (gh auth, claude/codex/mimo/opencode configs, `~/reports` — anything NOT in `./data/`), runs `git pull`, rebuilds (auto-detects docker compose or `./run.sh`), and restores the snapshot into the new container. Rollback points are kept in `./backups/`.
+
+```bash
+# Plain update — preserves ./data/ but RESETS the container home layer
+# (gh auth, CLI auths/configs, ~/reports are lost):
 git pull
 make update
 ```
+
+Use `./updater.sh` unless you specifically want a clean home.
 
 To update the Hermes Agent version itself:
 
