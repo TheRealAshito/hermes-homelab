@@ -22,6 +22,9 @@ services:
       - https_proxy=http://hermes-egress-proxy:8888
       - NO_PROXY=localhost,127.0.0.1
       - no_proxy=localhost,127.0.0.1
+      # Escape hatch: EGRESS_MODE=legacy in .env bypasses the allowlist proxy
+      # (direct 80/443). Default proxy = default-deny allowlist.
+      - EGRESS_MODE=${EGRESS_MODE:-proxy}
     cap_drop:
       - ALL
     cap_add:

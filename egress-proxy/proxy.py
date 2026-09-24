@@ -74,6 +74,8 @@ def load_rules():
         _rules_cache["mtime"] = mtime
         _rules_cache["rules"] = rules
         log(f"allowlist loaded: {len(rules)} rule(s)")
+        if not rules:
+            log("WARNING: allowlist is EMPTY — deny-ALL, every request will be blocked")
         return rules
 
 

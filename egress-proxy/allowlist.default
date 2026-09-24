@@ -5,6 +5,11 @@
 # Where the AI creates things / downloads packages from:
 
 # ── AI provider APIs (add YOUR provider's API host if missing) ─────────
+# NOTE: the xiaomi/mimo client talks to *.xiaomimimo.com (api.xiaomimimo.com,
+# token-plan-sgp.xiaomimimo.com) — NOT api.xiaomi.com. The rule below covers
+# all of them; without it EVERY chat call is denied and the agent is unusable.
+xiaomimimo.com
+googleapis.com
 api.openai.com
 api.anthropic.com
 generativelanguage.googleapis.com
@@ -53,6 +58,17 @@ storage.googleapis.com
 # ── Model / dataset hubs ──────────────────────────────────────────────
 huggingface.co
 hf.co
+
+# ── Coding CLIs in the image (opencode, codex, claude, mimo) ───────────
+# Login / update endpoints they phone home to. Anything still blocked shows
+# up as a DENY line in `docker logs hermes-egress-proxy` — add the host here
+# (edits apply live, no restart needed).
+opencode.ai
+claude.ai
+chatgpt.com
+auth.openai.com
+console.anthropic.com
+accounts.google.com
 
 # ── Escape hatch (removes the guard entirely — leave commented out) ───
 # *

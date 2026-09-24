@@ -36,7 +36,12 @@ if docker ps --format '{{.Names}}' | grep -qx "$CONTAINER"; then
     # --user root: never depends on the image's USER. --ignore-failed-read:
     # unreadable leftovers must not spam or fail the run (stderr goes to a
     # log). The snapshot is the ONLY copy of home — empty means abort.
+    # .local/bin is EXCLUDED (snapshot and restore): it holds the hermes/
+    # antigravity launchers the image installs, ~/.local/bin is first in
+    # PATH, so restoring an old copy would shadow the freshly built image's
+    # binaries and the update would silently "not happen".
     docker exec --user root "$CONTAINER" tar -C /home/hermes --exclude=./.hermes \
+        --exclude=./.local/bin \
         --numeric-owner --ignore-failed-read --warning=no-failed-read -czf - . \
         > "$HOME_SNAPSHOT" 2> "$BACKUP_DIR/hermes-home-$TIMESTAMP.log" || true
     if [ -s "$HOME_SNAPSHOT" ]; then
@@ -78,7 +83,7 @@ fi
 echo "[updater] 5/6 Restore home snapshot..."
 sleep 3
 if [ -n "$HOME_SNAPSHOT" ] && docker ps --format '{{.Names}}' | grep -qx "$CONTAINER"; then
-    if docker exec --user root -i "$CONTAINER" tar -C /home/hermes --numeric-owner -xzf - < "$HOME_SNAPSHOT"; then
+    if docker exec --user root -i "$CONTAINER" tar -C /home/hermes --exclude=./.local/bin --numeric-owner -xzf - < "$HOME_SNAPSHOT"; then
         echo "          restored: $HOME_SNAPSHOT"
     else
         echo "          WARNING: restore reported errors (continuing). Snapshot kept at: $HOME_SNAPSHOT"

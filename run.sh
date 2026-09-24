@@ -145,6 +145,7 @@ do_run() {
         -e https_proxy="http://$PROXY_CONTAINER:8888" \
         -e NO_PROXY="localhost,127.0.0.1" \
         -e no_proxy="localhost,127.0.0.1" \
+        -e EGRESS_MODE="${EGRESS_MODE:-proxy}" \
         -v "$DATA_DIR/workspace:/workspace" \
         -v "$DATA_DIR/hermes-config:/home/hermes/.hermes" \
         "$IMAGE"

@@ -26,4 +26,9 @@ if [ ! -f "$TARGET" ]; then
   echo "[seed] created $TARGET from egress-proxy/allowlist.default"
 else
   echo "[seed] $TARGET exists — leaving it untouched"
+  if [ ! -s "$TARGET" ]; then
+    echo "[seed] WARNING: $TARGET is EMPTY = deny-ALL egress — every request will be 403'd."
+    echo "[seed]          To seed the default list: rm '$TARGET' && bash '$SCRIPT_DIR/egress-proxy/seed.sh'"
+    echo "[seed]          To open everything temporarily: echo '*' >> '$TARGET'"
+  fi
 fi

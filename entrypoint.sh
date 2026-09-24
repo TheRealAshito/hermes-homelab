@@ -25,23 +25,33 @@ echo "[entrypoint] Hermes Homelab starting..."
     # (see egress-proxy/). Direct outbound is limited to DNS.
     #   EGRESS_MODE=proxy  (default) — only the proxy is reachable
     #   EGRESS_MODE=legacy           — direct 80/443, no allowlist
-    # Fail-safe: if the proxy cannot be resolved, web egress stays BLOCKED.
+    # The proxy rule is SUBNET-based (not a /32): a proxy recreate that
+    # changes its container IP, or Docker DNS not being ready yet at
+    # entrypoint time, must not strand all egress. The rule still precedes
+    # the RFC1918 DROP loop below (the proxy lives on a private docker
+    # subnet). Fail-safe: if neither the subnet nor a DNS answer is
+    # available, web egress stays BLOCKED.
     EGRESS_MODE="${EGRESS_MODE:-proxy}"
-    PROXY_HOST="${EGRESS_PROXY_HOST:-hermes-egress-proxy}"
     PROXY_PORT="${EGRESS_PROXY_PORT:-8888}"
-    PROXY_IP=$(getent hosts "$PROXY_HOST" 2>/dev/null | awk 'NR==1{print $1}')
+    PROXY_CIDR=$(ip route 2>/dev/null | awk '/proto kernel/ {print $1; exit}')
+    if [ -z "$PROXY_CIDR" ]; then
+      PROXY_HOST="${EGRESS_PROXY_HOST:-hermes-egress-proxy}"
+      for _ in 1 2 3 4 5; do
+        PROXY_IP=$(getent hosts "$PROXY_HOST" 2>/dev/null | awk 'NR==1{print $1}')
+        [ -n "$PROXY_IP" ] && PROXY_CIDR="$PROXY_IP/32" && break
+        sleep 1
+      done
+    fi
 
     if [ "$EGRESS_MODE" = "legacy" ]; then
       iptables -A OUTPUT -p tcp --dport 443 -j ACCEPT
       iptables -A OUTPUT -p tcp --dport 80  -j ACCEPT
       echo "[entrypoint] Egress: LEGACY mode — direct web allowed (no allowlist)."
-    elif [ -n "$PROXY_IP" ]; then
-      # must precede the RFC1918 DROP loop below (the proxy lives on a
-      # private docker subnet)
-      iptables -A OUTPUT -d "$PROXY_IP" -p tcp --dport "$PROXY_PORT" -j ACCEPT
-      echo "[entrypoint] Egress: allowlist proxy $PROXY_IP:$PROXY_PORT (default deny)."
+    elif [ -n "$PROXY_CIDR" ]; then
+      iptables -A OUTPUT -d "$PROXY_CIDR" -p tcp --dport "$PROXY_PORT" -j ACCEPT
+      echo "[entrypoint] Egress: allowlist proxy at $PROXY_CIDR:$PROXY_PORT (default deny)."
     else
-      echo "[entrypoint] WARNING: egress proxy '$PROXY_HOST' unresolved — web egress BLOCKED (fail-safe)."
+      echo "[entrypoint] WARNING: egress proxy unreachable (no subnet, host unresolved) — web egress BLOCKED (fail-safe). Set EGRESS_MODE=legacy to allow direct web."
     fi
 
     for NET in 10.0.0.0/8 172.16.0.0/12 192.168.0.0/16 169.254.0.0/16 224.0.0.0/4; do
