@@ -8,7 +8,22 @@ echo "[entrypoint] Hermes Homelab starting..."
 # ══════════════════════════════════════════════════════════════════════
 
 {
-  echo 1 > /proc/sys/net/ipv6/conf/all/disable_ipv6 2>/dev/null || true
+  # ── Egress policy (drives the firewall below AND tool routing) ────────
+  #   EGRESS_PROXY_URL unset/empty (default) — OPEN: the internet is
+  #     reachable on every port (research, package installs, git+ssh, ...).
+  #     No allowlist anywhere. Only the local network is unreachable.
+  #   EGRESS_PROXY_URL=http://hermes-egress-proxy:8888 — ALLOWLIST mode:
+  #     all web egress goes through the default-deny proxy (egress-proxy/)
+  #     and the firewall only lets DNS + the proxy through.
+  #   (EGRESS_MODE=proxy from an earlier revision is honored as an alias.)
+  PROXY_URL="${EGRESS_PROXY_URL:-}"
+  if [ "${EGRESS_MODE:-}" = "proxy" ] && [ -z "$PROXY_URL" ]; then
+    PROXY_URL="http://${EGRESS_PROXY_HOST:-hermes-egress-proxy}:${EGRESS_PROXY_PORT:-8888}"
+  fi
+  if [ -n "$PROXY_URL" ]; then
+    export http_proxy="$PROXY_URL" https_proxy="$PROXY_URL"
+    export HTTP_PROXY="$PROXY_URL" HTTPS_PROXY="$PROXY_URL"
+  fi
 
   if iptables -L INPUT >/dev/null 2>&1; then
     echo "[entrypoint] Applying network isolation..."
@@ -21,44 +36,43 @@ echo "[entrypoint] Hermes Homelab starting..."
     iptables -A OUTPUT -o lo -j ACCEPT
     iptables -A OUTPUT -m state --state ESTABLISHED,RELATED -j ACCEPT
 
-    # Egress policy: web egress goes ONLY through the allowlist proxy
-    # (see egress-proxy/). Direct outbound is limited to DNS.
-    #   EGRESS_MODE=proxy  (default) — only the proxy is reachable
-    #   EGRESS_MODE=legacy           — direct 80/443, no allowlist
-    # The proxy rule is SUBNET-based (not a /32): a proxy recreate that
-    # changes its container IP, or Docker DNS not being ready yet at
-    # entrypoint time, must not strand all egress. The rule still precedes
-    # the RFC1918 DROP loop below (the proxy lives on a private docker
-    # subnet). Fail-safe: if neither the subnet nor a DNS answer is
-    # available, web egress stays BLOCKED.
-    EGRESS_MODE="${EGRESS_MODE:-proxy}"
-    PROXY_PORT="${EGRESS_PROXY_PORT:-8888}"
-    PROXY_CIDR=$(ip route 2>/dev/null | awk '/proto kernel/ {print $1; exit}')
-    if [ -z "$PROXY_CIDR" ]; then
-      PROXY_HOST="${EGRESS_PROXY_HOST:-hermes-egress-proxy}"
-      for _ in 1 2 3 4 5; do
-        PROXY_IP=$(getent hosts "$PROXY_HOST" 2>/dev/null | awk 'NR==1{print $1}')
-        [ -n "$PROXY_IP" ] && PROXY_CIDR="$PROXY_IP/32" && break
-        sleep 1
-      done
-    fi
-
-    if [ "$EGRESS_MODE" = "legacy" ]; then
-      iptables -A OUTPUT -p tcp --dport 443 -j ACCEPT
-      iptables -A OUTPUT -p tcp --dport 80  -j ACCEPT
-      echo "[entrypoint] Egress: LEGACY mode — direct web allowed (no allowlist)."
-    elif [ -n "$PROXY_CIDR" ]; then
-      iptables -A OUTPUT -d "$PROXY_CIDR" -p tcp --dport "$PROXY_PORT" -j ACCEPT
-      echo "[entrypoint] Egress: allowlist proxy at $PROXY_CIDR:$PROXY_PORT (default deny)."
+    if [ -n "$PROXY_URL" ]; then
+      # ALLOWLIST mode — only the proxy is reachable. The rule is
+      # SUBNET-based (not a /32): a proxy recreate that changes its
+      # container IP, or Docker DNS not being ready at entrypoint time,
+      # must not strand all egress. It must precede the RFC1918 DROP loop
+      # below (the proxy lives on a private docker subnet).
+      PROXY_PORT="${EGRESS_PROXY_PORT:-}"
+      if [ -z "$PROXY_PORT" ]; then
+        _hp="${PROXY_URL#*://}"; _hp="${_hp%%/*}"; PROXY_PORT="${_hp##*:}"
+      fi
+      case "$PROXY_PORT" in ''|*[!0-9]*) PROXY_PORT=8888;; esac
+      PROXY_CIDR=$(ip route 2>/dev/null | awk '/proto kernel/ {print $1; exit}')
+      if [ -z "$PROXY_CIDR" ]; then
+        PROXY_HOST="${EGRESS_PROXY_HOST:-hermes-egress-proxy}"
+        for _ in 1 2 3 4 5; do
+          PROXY_IP=$(getent hosts "$PROXY_HOST" 2>/dev/null | awk 'NR==1{print $1}')
+          [ -n "$PROXY_IP" ] && PROXY_CIDR="$PROXY_IP/32" && break
+          sleep 1
+        done
+      fi
+      if [ -n "$PROXY_CIDR" ]; then
+        iptables -A OUTPUT -d "$PROXY_CIDR" -p tcp --dport "$PROXY_PORT" -j ACCEPT
+        echo "[entrypoint] Egress: ALLOWLIST mode — via $PROXY_URL (default deny)."
+      else
+        echo "[entrypoint] WARNING: egress proxy unresolved — web egress BLOCKED (fail-safe)."
+      fi
     else
-      echo "[entrypoint] WARNING: egress proxy unreachable (no subnet, host unresolved) — web egress BLOCKED (fail-safe). Set EGRESS_MODE=legacy to allow direct web."
+      echo "[entrypoint] Egress: OPEN mode — internet allowed (all ports), local network blocked."
     fi
 
-    for NET in 10.0.0.0/8 172.16.0.0/12 192.168.0.0/16 169.254.0.0/16 224.0.0.0/4; do
+    # Local network + special ranges: NEVER reachable (both modes).
+    for NET in 10.0.0.0/8 172.16.0.0/12 192.168.0.0/16 100.64.0.0/10 169.254.0.0/16 224.0.0.0/4 240.0.0.0/4 0.0.0.0/8; do
       iptables -A OUTPUT -d "$NET" -j DROP
     done
     iptables -A OUTPUT -p udp --dport 53 -j ACCEPT
     iptables -A OUTPUT -p tcp --dport 53 -j ACCEPT
+    [ -z "$PROXY_URL" ] && iptables -A OUTPUT -j ACCEPT
     echo "[entrypoint] Network isolation active (inbound OK, outbound LAN blocked)."
   else
     echo "[entrypoint] WARNING: iptables not available — network isolation DISABLED!"
@@ -72,7 +86,21 @@ echo "[entrypoint] Hermes Homelab starting..."
     ip6tables -P FORWARD DROP
     ip6tables -A INPUT  -i lo -j ACCEPT
     ip6tables -A OUTPUT -o lo -j ACCEPT
-    echo "[entrypoint] IPv6 outbound blocked."
+    ip6tables -A OUTPUT -m state --state ESTABLISHED,RELATED -j ACCEPT
+    # Local IPv6 space is never reachable (both modes).
+    ip6tables -A OUTPUT -d fc00::/7 -j DROP
+    ip6tables -A OUTPUT -d fe80::/10 -j DROP
+    ip6tables -A OUTPUT -d ff00::/8 -j DROP
+    if [ -z "$PROXY_URL" ]; then
+      ip6tables -A OUTPUT -j ACCEPT
+      echo "[entrypoint] IPv6: internet allowed, ULA/link-local/multicast blocked."
+    else
+      echo 1 > /proc/sys/net/ipv6/conf/all/disable_ipv6 2>/dev/null || true
+      echo "[entrypoint] IPv6 outbound blocked (allowlist mode is IPv4-only)."
+    fi
+  else
+    echo 1 > /proc/sys/net/ipv6/conf/all/disable_ipv6 2>/dev/null || true
+    echo "[entrypoint] IPv6 disabled at kernel level (ip6tables unavailable)."
   fi
 } || echo "[entrypoint] WARNING: network isolation setup had errors (continuing)."
 

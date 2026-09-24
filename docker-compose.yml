@@ -14,17 +14,18 @@ services:
     environment:
       - TTYD_USER=${TTYD_USER:-hermes}
       - TTYD_PASSWORD=${TTYD_PASSWORD:-changeme}
-      # All web egress goes through the allowlist proxy (enforced by the
-      # entrypoint firewall rules; see egress-proxy/).
-      - HTTP_PROXY=http://hermes-egress-proxy:8888
-      - HTTPS_PROXY=http://hermes-egress-proxy:8888
-      - http_proxy=http://hermes-egress-proxy:8888
-      - https_proxy=http://hermes-egress-proxy:8888
+      # Egress routing: empty = OPEN mode (default) — tools talk to the
+      # internet directly (LAN stays blocked by the entrypoint firewall).
+      # Set EGRESS_PROXY_URL in .env to route everything through the
+      # default-deny allowlist proxy (egress-proxy/).
+      - HTTP_PROXY=${EGRESS_PROXY_URL:-}
+      - HTTPS_PROXY=${EGRESS_PROXY_URL:-}
+      - http_proxy=${EGRESS_PROXY_URL:-}
+      - https_proxy=${EGRESS_PROXY_URL:-}
       - NO_PROXY=localhost,127.0.0.1
       - no_proxy=localhost,127.0.0.1
-      # Escape hatch: EGRESS_MODE=legacy in .env bypasses the allowlist proxy
-      # (direct 80/443). Default proxy = default-deny allowlist.
-      - EGRESS_MODE=${EGRESS_MODE:-proxy}
+      - EGRESS_PROXY_URL=${EGRESS_PROXY_URL:-}
+      - EGRESS_MODE=${EGRESS_MODE:-}
     cap_drop:
       - ALL
     cap_add:

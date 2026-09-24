@@ -20,6 +20,7 @@ file is MISSING does the baked-in default list apply; if neither exists,
 everything is denied.
 """
 
+import ipaddress
 import os
 import socket
 import select
@@ -93,9 +94,53 @@ def host_allowed(host, rules):
     return False
 
 
-def deny(conn, host, port):
-    log(f"DENY  {host}:{port}")
-    body = f"blocked by egress allowlist: {host}:{port}\n".encode()
+_PRIVATE_NETS = tuple(ipaddress.ip_network(n) for n in (
+    "10.0.0.0/8", "172.16.0.0/12", "192.168.0.0/16", "100.64.0.0/10",
+    "169.254.0.0/16", "224.0.0.0/4", "240.0.0.0/4", "0.0.0.0/8",
+    "fc00::/7", "fe80::/10", "ff00::/8",
+))
+
+
+def split_hostport(hostport, default_port):
+    """'host:port', '[v6]:port' or bare 'host'/'[v6]' -> (host, port)."""
+    hostport = hostport.strip()
+    if hostport.startswith("["):
+        host, _, rest = hostport[1:].partition("]")
+        return host, int(rest.lstrip(":") or default_port)
+    host, _, port = hostport.partition(":")
+    return host, int(port or default_port)
+
+
+def _is_local_addr(addr):
+    return any(addr.version == net.version and addr in net for net in _PRIVATE_NETS)
+
+
+def target_is_local(host):
+    """True for local-network / non-global targets. The sandbox must NEVER
+    reach the operator's LAN — enforced regardless of the allowlist (even
+    through the '*' escape hatch). Loopback is intentionally allowed: through
+    the proxy it resolves inside the proxy's own container, not the LAN."""
+    try:
+        return _is_local_addr(ipaddress.ip_address(host.strip("[]").split("%")[0]))
+    except ValueError:
+        pass  # a hostname — check the resolved addresses below
+    try:
+        infos = socket.getaddrinfo(host, None)
+    except OSError:
+        return False  # unresolvable — the connect step will 502 it
+    for info in infos:
+        addr = str(info[4][0])
+        try:
+            if _is_local_addr(ipaddress.ip_address(addr.split("%")[0])):
+                return True
+        except ValueError:
+            continue
+    return False
+
+
+def deny(conn, host, port, reason="blocked by egress allowlist"):
+    log(f"DENY  {host}:{port} ({reason})")
+    body = f"{reason}: {host}:{port}\n".encode()
     resp = (
         b"HTTP/1.1 403 Forbidden\r\n"
         b"Content-Type: text/plain\r\n"
@@ -137,6 +182,10 @@ def handle_connect(cli, host, port):
         deny(cli, host, port)
         cli.close()
         return
+    if target_is_local(host):
+        deny(cli, host, port, reason="blocked: local network target is never allowed")
+        cli.close()
+        return
     try:
         upstream = socket.create_connection((host, port), timeout=15)
     except OSError as e:
@@ -159,8 +208,7 @@ def handle_http(cli, first_line, headers, body):
         rest = first_line.split(" ", 2)[2]
         hostport = target.split("//", 1)[1].split("/", 1)[0]
         path = "/" + target.split("//", 1)[1].split("/", 1)[1] if "/" in target.split("//", 1)[1] else "/"
-        host, _, port = hostport.partition(":")
-        port = int(port or 80)
+        host, port = split_hostport(hostport, 80)
     except (IndexError, ValueError):
         cli.sendall(b"HTTP/1.1 400 Bad Request\r\nConnection: close\r\n\r\n")
         cli.close()
@@ -169,6 +217,10 @@ def handle_http(cli, first_line, headers, body):
     rules = load_rules()
     if not host_allowed(host, rules):
         deny(cli, host, port)
+        cli.close()
+        return
+    if target_is_local(host):
+        deny(cli, host, port, reason="blocked: local network target is never allowed")
         cli.close()
         return
     try:
@@ -200,8 +252,8 @@ def handle(cli, addr):
 
         if first.startswith("CONNECT "):
             hostport = first.split(" ", 2)[1]
-            host, _, port = hostport.partition(":")
-            handle_connect(cli, host, int(port or 443))
+            host, port = split_hostport(hostport, 443)
+            handle_connect(cli, host, port)
         else:
             handle_http(cli, first, headers, body)
     except Exception as e:  # never let one bad request kill the proxy

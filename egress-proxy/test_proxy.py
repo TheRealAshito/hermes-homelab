@@ -239,6 +239,20 @@ except (socket.timeout, OSError) as e:
     print(f"  skip (network blocked here): {e}")
 s.close()
 
+# ── [9] local-network guard (holds even through the '*' escape) ────────
+print("[9] local-network guard")
+with open(allowlist, "w") as f:
+    f.write("*\n")
+os.utime(allowlist, (time.time(), time.time()))
+for target in ("10.0.0.1:80", "192.168.1.1:443", "169.254.169.254:80",
+               "100.64.0.1:80", "[fd00::1]:443"):
+    resp = proxy_request(f"CONNECT {target} HTTP/1.1\r\nHost: {target}\r\n\r\n".encode())
+    check(f"{target} denied despite '*'", b"403" in resp.split(b"\r\n", 1)[0], resp[:60].decode())
+resp = proxy_request(f"GET http://10.0.0.1/ HTTP/1.1\r\nHost: 10.0.0.1\r\nConnection: close\r\n\r\n".encode())
+check("plain HTTP to LAN denied despite '*'", b"403" in resp.split(b"\r\n", 1)[0], resp[:60].decode())
+resp = proxy_request(b"CONNECT 127.0.0.1:" + str(ORIGIN_PORT).encode() + b" HTTP/1.1\r\nHost: x\r\n\r\n")
+check("loopback still allowed (proxy-local origin)", b"200" in resp.split(b"\r\n", 1)[0], resp[:60].decode())
+
 proc.terminate()
 origin.shutdown()
 

@@ -6,8 +6,8 @@ Run [Hermes Agent](https://github.com/nousresearch/hermes-agent) + AI coding CLI
 
 - Runs **Hermes Agent** + **6 AI coding CLIs** in an isolated Docker container
 - Web-based terminal on port 7681 (works on desktop and mobile)
-- **Network isolation**: blocks all LAN access (192.168.x, 10.x, 172.16-31.x)
-- **Egress allowlist**: all internet access goes through a default-deny proxy — only domains you allow (AI APIs, GitHub, package registries) are reachable
+- **Network isolation**: the agent can never reach the local network (192.168.x, 10.x, 172.16-31.x, Tailscale 100.64.x, link-local/metadata) — the whole internet stays open for research and package installs
+- **Optional egress allowlist**: opt in via `EGRESS_PROXY_URL` to route all web access through a default-deny proxy — only domains you allow are reachable
 - Persistent storage for chats, memory, skills, and workspace files
 - Backup/restore for all persistent data
 
@@ -94,17 +94,19 @@ gh auth login          # follow the prompts
 
 This gives Hermes access to GitHub repos, issues, PRs, etc. via MCP tools.
 
-## Network egress allowlist
+## Network egress
 
-All web egress from the agent goes through `egress-proxy/` — a default-deny proxy (an ALLOWLIST, not a blocklist). The firewall inside the container blocks direct egress and `HTTP(S)_PROXY` points every tool at the proxy.
+**Default (open) mode — no allowlist.** The agent can reach the whole internet on any port (web research, package installs, git+ssh, ...). The one thing it can never do is reach YOUR local network: RFC1918 (10.x, 172.16-31.x, 192.168.x), Tailscale/CGNAT 100.64-127.x, link-local 169.254.x (cloud metadata), multicast and IPv6 ULA/link-local are all blocked at the firewall.
+
+**Optional ALLOWLIST mode.** Set `EGRESS_PROXY_URL=http://hermes-egress-proxy:8888` in `.env` to route all web egress through `egress-proxy/` — a default-deny proxy (an ALLOWLIST, not a blocklist). The firewall then only lets DNS + the proxy through.
 
 - The allowlist lives at `./data/egress-allowlist.conf` (seeded from `egress-proxy/allowlist.default` on first run).
 - `example.com` allows that domain AND its subdomains. `#` starts a comment. Edits apply live — no restart needed.
 - An EMPTY file denies everything (intentional lockdown). Deleting the file falls back to the baked-in defaults.
-- Ships pre-seeded with: AI provider APIs, GitHub, pypi/npm/crates/go registries, distro mirrors, and huggingface.
+- Ships pre-seeded with: AI provider APIs (incl. `xiaomimimo.com` for the xiaomi/mimo provider), GitHub, pypi/npm/crates/go registries, distro mirrors, and huggingface.
 - When a tool fails to reach a host: `docker logs hermes-egress-proxy` shows `DENY <host>` lines — add the domain to the file and retry.
+- The proxy refuses local-network targets in BOTH modes (even through the `*` escape hatch) — the sandbox can never dial the LAN.
 - Test the proxy anywhere: `python3 egress-proxy/test_proxy.py` (pure stdlib).
-- Escape hatch: `EGRESS_MODE=legacy` turns the firewall enforcement off (tools still use the proxy via env).
 
 ## Sandboxing with gVisor (optional)
 
@@ -138,7 +140,7 @@ See [SECURITY-AUDIT.md](SECURITY-AUDIT.md) for the full threat model.
 | No Docker socket | Docker socket is NOT mounted — no container escape |
 | Resource limits | nproc=512 (fork bomb protection), nofile=65536 |
 | tmpfs | /tmp and /run are tmpfs (not persisted, limited size) |
-| Egress allowlist | All web egress via a default-deny proxy (egress-proxy/); firewall blocks direct egress |
+| Egress policy | Internet fully open by default (LAN never reachable); opt-in default-deny allowlist via EGRESS_PROXY_URL |
 | Resource caps | mem_limit + cpus on the container (protects the host from runaway workloads) |
 | Optional gVisor | `HERMES_RUNTIME=runsc` runs the container under a userspace kernel (VM-grade escape protection) |
 | TTYD basic auth | Web terminal requires username/password |
@@ -272,8 +274,8 @@ Expected runtime memory: **300–500 MB**
 **`hermes update` fails with "this install's venv contains files owned by another user"**
 → Root cause: the image build ran `hermes --version` as root, writing root-owned `__pycache__` into the venv at `/opt/hermes-agent`; root shells recreate the same drift at runtime. Fixed in the image (the version check now runs as `hermes` and the build chowns `/opt/hermes-agent`), the entrypoint re-applies that ownership on every start, and `./run.sh shell` now opens as the `hermes` user. For an already-built container: `docker exec -u root hermes-homelab chown -R hermes:hermes /opt/hermes-agent`, then `hermes update` again — or skip `hermes update` entirely: `./updater.sh` (and `make update`) rebuild with `--no-cache`, which installs the latest Hermes Agent anyway.
 
-**Every request fails with "blocked by egress allowlist: host:port" (or curl returns 403 on everything)**
-→ The egress allowlist proxy is doing its job but the host isn't listed (or the list is empty). Check `docker logs hermes-egress-proxy` — each block is one `DENY host:port` line. Fixes (fastest first): (1) `echo '*' >> ./data/egress-allowlist.conf` opens everything temporarily (the file is re-read live), (2) add the missing domain(s) to `./data/egress-allowlist.conf` — `xiaomimimo.com` must be there for the xiaomi/mimo provider (it is NOT `api.xiaomi.com`), (3) if the file is empty it means deny-ALL: `rm ./data/egress-allowlist.conf && bash egress-proxy/seed.sh`. For no allowlist at all: `EGRESS_MODE=legacy` in `.env` + restart.
+**A tool can't reach the internet (open mode)**
+→ In the default open mode nothing is allowlisted — if the internet is unreachable, check `docker logs hermes-homelab | grep -i egress` (firewall state) and that `EGRESS_PROXY_URL` isn't set in `.env`. The local network being unreachable is by design.
 
-**A tool can't reach the internet ("blocked by egress allowlist")**
-→ The egress proxy denied the host — working as designed. `docker logs hermes-egress-proxy` shows `DENY <host>` lines. Add the domain to `./data/egress-allowlist.conf` (applies live) and retry. Direct egress is intentionally blocked; everything goes through the proxy.
+**Requests fail with "blocked by egress allowlist: host:port" (allowlist mode)**
+→ The allowlist proxy denied the host. `docker logs hermes-egress-proxy` shows one `DENY host:port` line per block. Fixes (fastest first): (1) add the domain to `./data/egress-allowlist.conf` (applies live), (2) `echo '*' >> ./data/egress-allowlist.conf` opens everything (the local network stays blocked regardless), (3) empty file = deny-ALL: `rm ./data/egress-allowlist.conf && bash egress-proxy/seed.sh`. To drop the allowlist entirely: clear `EGRESS_PROXY_URL` in `.env` + restart (open mode is the default).

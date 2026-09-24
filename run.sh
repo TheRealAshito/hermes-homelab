@@ -97,7 +97,9 @@ do_run() {
     # egress proxy by name). Idempotent.
     docker network create "$NETWORK" >/dev/null 2>&1 || true
 
-    # Egress allowlist proxy — the app's only exit to the internet.
+    # Egress allowlist proxy — only used in ALLOWLIST mode (EGRESS_PROXY_URL
+    # set); idle and unused in the default open mode. Kept running so opting
+    # in is just a .env change + restart.
     docker rm -f "$PROXY_CONTAINER" 2>/dev/null || true
     docker run -d \
         --name "$PROXY_CONTAINER" \
@@ -139,13 +141,14 @@ do_run() {
         -p "$PORT:7681" \
         -e TTYD_USER="$TTYD_USER" \
         -e TTYD_PASSWORD="$TTYD_PASSWORD" \
-        -e HTTP_PROXY="http://$PROXY_CONTAINER:8888" \
-        -e HTTPS_PROXY="http://$PROXY_CONTAINER:8888" \
-        -e http_proxy="http://$PROXY_CONTAINER:8888" \
-        -e https_proxy="http://$PROXY_CONTAINER:8888" \
+        -e HTTP_PROXY="${EGRESS_PROXY_URL:-}" \
+        -e HTTPS_PROXY="${EGRESS_PROXY_URL:-}" \
+        -e http_proxy="${EGRESS_PROXY_URL:-}" \
+        -e https_proxy="${EGRESS_PROXY_URL:-}" \
         -e NO_PROXY="localhost,127.0.0.1" \
         -e no_proxy="localhost,127.0.0.1" \
-        -e EGRESS_MODE="${EGRESS_MODE:-proxy}" \
+        -e EGRESS_PROXY_URL="${EGRESS_PROXY_URL:-}" \
+        -e EGRESS_MODE="${EGRESS_MODE:-}" \
         -v "$DATA_DIR/workspace:/workspace" \
         -v "$DATA_DIR/hermes-config:/home/hermes/.hermes" \
         "$IMAGE"

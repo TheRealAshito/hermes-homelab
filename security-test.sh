@@ -73,8 +73,9 @@ fi
 echo ""
 echo "[3/8] Network isolation (IPv4 LAN blocking)"
 
-# Test RFC1918 ranges — these should all FAIL (timeout/refused)
-LAN_TARGETS=("192.168.1.1" "10.0.0.1" "172.16.0.1" "192.168.0.1")
+# Test local-network ranges — these must all FAIL (timeout/refused) in EVERY
+# mode, including Tailscale/CGNAT (100.64/10) and cloud metadata.
+LAN_TARGETS=("192.168.1.1" "10.0.0.1" "172.16.0.1" "192.168.0.1" "100.64.0.1" "169.254.169.254")
 for target in "${LAN_TARGETS[@]}"; do
   if timeout 2 bash -c "echo > /dev/tcp/$target/80" 2>/dev/null; then
     fail "Can reach LAN IP $target:80 — network isolation broken!"
@@ -83,36 +84,47 @@ for target in "${LAN_TARGETS[@]}"; do
   fi
 done
 
-# Direct internet egress must be BLOCKED — web access goes through the
-# allowlist proxy only (see section 8). EGRESS_MODE=legacy opts out.
-if timeout 5 bash -c "echo > /dev/tcp/1.1.1.1/443" 2>/dev/null; then
-  if [ "${EGRESS_MODE:-proxy}" = "legacy" ]; then
-    warn "Direct egress open (EGRESS_MODE=legacy — allowlist not enforced)"
+# Internet egress depends on the mode:
+#   open (default, EGRESS_PROXY_URL empty) — direct egress MUST work
+#   allowlist (EGRESS_PROXY_URL set)       — direct egress MUST be blocked
+if [ -n "${EGRESS_PROXY_URL:-}" ]; then
+  if timeout 5 bash -c "echo > /dev/tcp/1.1.1.1/443" 2>/dev/null; then
+    fail "Direct egress to 1.1.1.1:443 works — allowlist mode broken!"
   else
-    fail "Direct egress to 1.1.1.1:443 works — proxy-only policy broken!"
+    pass "Direct egress blocked (allowlist mode: proxy-only)"
   fi
 else
-  pass "Direct egress blocked (proxy-only policy)"
+  if timeout 5 bash -c "echo > /dev/tcp/1.1.1.1/443" 2>/dev/null; then
+    pass "Internet reachable (open mode — research/packages work)"
+  else
+    fail "Internet unreachable in open mode — egress is broken"
+  fi
 fi
 
 # ── 4. NETWORK ISOLATION — IPv6 ──────────────────────────────────────
 echo ""
 echo "[4/8] Network isolation (IPv6)"
 
-if [ -f /proc/sys/net/ipv6/conf/all/disable_ipv6 ]; then
-  val=$(cat /proc/sys/net/ipv6/conf/all/disable_ipv6)
-  if [ "$val" = "1" ]; then
-    pass "IPv6 is disabled"
+if [ -n "${EGRESS_PROXY_URL:-}" ]; then
+  # allowlist mode is IPv4-only — IPv6 must be off (it would bypass the proxy)
+  val=$(cat /proc/sys/net/ipv6/conf/all/disable_ipv6 2>/dev/null || echo "absent")
+  if [ "$val" = "1" ] || [ "$val" = "absent" ]; then
+    pass "IPv6 disabled in allowlist mode"
   else
-    warn "IPv6 is not disabled — could bypass iptables rules"
+    warn "IPv6 is not disabled — could bypass the allowlist proxy"
   fi
 else
-  pass "IPv6 not available in container"
+  # open mode: IPv6 internet is fine, but ULA/link-local must be blocked
+  if command -v ip6tables >/dev/null 2>&1 && ip6tables -S OUTPUT 2>/dev/null | grep -qE "fc00::/7|fe80::/10"; then
+    pass "IPv6 local ranges blocked (internet v6 allowed in open mode)"
+  else
+    warn "IPv6 local-range rules missing — v6 could reach the LAN"
+  fi
 fi
 
 # Check ip6tables
 if command -v ip6tables >/dev/null 2>&1; then
-  if ip6tables -L INPUT 2>/dev/null | grep -q "DROP"; then
+  if ip6tables -L OUTPUT 2>/dev/null | grep -q "DROP"; then
     pass "ip6tables default policy is DROP"
   else
     warn "ip6tables rules may not be set"
@@ -198,36 +210,57 @@ fi
 echo ""
 echo "[8/8] Egress allowlist (proxy)"
 
-PROXY_URL="${HTTPS_PROXY:-${https_proxy:-}}"
-if [ -n "$PROXY_URL" ]; then
-  pass "Proxy env set ($PROXY_URL)"
+if [ -n "${EGRESS_PROXY_URL:-}" ]; then
+  # ── allowlist mode ──────────────────────────────────────────────────
+  PROXY_URL="${HTTPS_PROXY:-${https_proxy:-}}"
+  if [ -n "$PROXY_URL" ]; then
+    pass "Proxy env set ($PROXY_URL)"
+  else
+    fail "No HTTP(S)_PROXY env — tools would bypass the allowlist"
+  fi
+
+  # Allowlisted host must be reachable through the proxy
+  GITHUB_CODE=$(curl -s -o /dev/null -w '%{http_code}' --max-time 10 -x "${PROXY_URL}" https://api.github.com/ 2>/dev/null || echo "000")
+  if [ "$GITHUB_CODE" = "403" ]; then
+    fail "Allowlisted host (api.github.com) denied — check ./data/egress-allowlist.conf"
+  elif [ "$GITHUB_CODE" = "000" ]; then
+    warn "Could not reach api.github.com via proxy (proxy down? host offline?)"
+  else
+    pass "Allowlisted host reachable via proxy (HTTP $GITHUB_CODE)"
+  fi
+
+  # Non-allowlisted host must be denied by the proxy
+  DENY_BODY=$(curl -s --max-time 10 -x "${PROXY_URL}" https://example.com/ 2>/dev/null || true)
+  if echo "$DENY_BODY" | grep -q "blocked by egress allowlist"; then
+    pass "Non-allowlisted host denied by proxy (403 marker)"
+  else
+    fail "Non-allowlisted host NOT denied — allowlist broken!"
+  fi
+
+  # Direct HTTPS (bypassing the proxy) must be blocked by the firewall
+  if curl -s --max-time 5 https://example.com/ -o /dev/null 2>/dev/null; then
+    fail "Direct HTTPS works — firewall enforcement broken"
+  else
+    pass "Direct HTTPS (bypassing proxy) is blocked"
+  fi
 else
-  fail "No HTTP(S)_PROXY env — tools would bypass the allowlist"
+  # ── open mode (default): no allowlist — internet open, LAN never ────
+  OPEN_CODE=$(curl -s -o /dev/null -w '%{http_code}' --max-time 10 https://example.com/ 2>/dev/null || echo "000")
+  if [ "$OPEN_CODE" = "000" ]; then
+    fail "Internet unreachable in open mode — research/package installs broken"
+  else
+    pass "Internet open with no allowlist (example.com HTTP $OPEN_CODE)"
+  fi
 fi
 
-# Allowlisted host must be reachable through the proxy
-GITHUB_CODE=$(curl -s -o /dev/null -w '%{http_code}' --max-time 10 -x "${PROXY_URL}" https://api.github.com/ 2>/dev/null || echo "000")
-if [ "$GITHUB_CODE" = "403" ]; then
-  fail "Allowlisted host (api.github.com) denied — check ./data/egress-allowlist.conf"
-elif [ "$GITHUB_CODE" = "000" ]; then
-  warn "Could not reach api.github.com via proxy (is hermes-egress-proxy running? is the host online?)"
+# In BOTH modes the proxy must refuse local-network targets (the agent's
+# firewall cannot see inside proxied connections).
+PROXY_ORIGIN="http://${EGRESS_PROXY_HOST:-hermes-egress-proxy}:${EGRESS_PROXY_PORT:-8888}"
+LOCAL_BODY=$(curl -s --max-time 5 -x "$PROXY_ORIGIN" http://10.0.0.1/ 2>/dev/null || true)
+if echo "$LOCAL_BODY" | grep -qE "local network target is never allowed|blocked by egress allowlist"; then
+  pass "Proxy refuses local-network targets (even with '*' in the allowlist)"
 else
-  pass "Allowlisted host reachable via proxy (HTTP $GITHUB_CODE)"
-fi
-
-# Non-allowlisted host must be denied by the proxy
-DENY_BODY=$(curl -s --max-time 10 -x "${PROXY_URL}" https://example.com/ 2>/dev/null || true)
-if echo "$DENY_BODY" | grep -q "blocked by egress allowlist"; then
-  pass "Non-allowlisted host denied by proxy (403 marker)"
-else
-  fail "Non-allowlisted host NOT denied — allowlist broken!"
-fi
-
-# Direct HTTPS (bypassing the proxy) must be blocked by the firewall
-if curl -s --max-time 5 https://example.com/ -o /dev/null 2>/dev/null; then
-  fail "Direct HTTPS works — firewall enforcement broken"
-else
-  pass "Direct HTTPS (bypassing proxy) is blocked"
+  warn "Could not verify the proxy's LAN guard (is hermes-egress-proxy running?)"
 fi
 
 # ── SUMMARY ──────────────────────────────────────────────────────────
